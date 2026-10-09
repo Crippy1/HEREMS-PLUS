@@ -1,0 +1,12 @@
+{
+  "name": "herems-plus-deployment",
+  "version": "2.1.14-R220",
+  "private": true,
+  "type": "module",
+  "engines": {
+    "node": ">=22"
+  },
+  "scripts": {
+    "build": "node build.mjs"
+  }
+}
