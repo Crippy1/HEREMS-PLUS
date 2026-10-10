@@ -272,6 +272,30 @@ td input.score-in{width:70px}
 .av-fallback{width:38px;height:38px;border-radius:50%;background:var(--brand2);color:#fff;display:inline-flex;align-items:center;justify-content:center;font-weight:700;font-size:.85rem}
 .av-fallback.lg{width:64px;height:64px;font-size:1.3rem}
 .chart{width:100%;height:auto}
+/* Exact-step dashboard axes remain readable on large data sets. */
+#content .chart-stepped-scroll{max-width:100%;max-height:340px;overflow:auto;overscroll-behavior:contain;scrollbar-width:thin;scrollbar-color:#d97706 transparent;border-radius:8px}
+#content .chart-stepped-scroll .chart{display:block;min-width:440px}
+#sidebar #nav .portal-finder{flex:0 0 auto;margin:0 0 .65rem;min-width:0}
+#sidebar .portal-search-full>label{display:block;color:#f8fafc;font-size:.73rem;font-weight:800;letter-spacing:.04em;margin:0 0 .4rem .2rem}
+#sidebar .portal-search-field{display:flex;align-items:center;gap:.4rem;background:#fff;border:1px solid #cbd5e1;border-radius:10px;padding:.25rem .55rem;min-width:0}
+#sidebar #portal-search{width:100%;min-width:0;box-shadow:none;border:0;border-radius:6px;background:#fff;color:#172033;padding:.45rem 0;font-size:.8rem;line-height:1.4}
+#sidebar #portal-search:focus{outline:0}
+#sidebar .portal-search-field:focus-within{outline:2px solid #fbbf24;outline-offset:2px}
+#sidebar #portal-search-results{max-height:260px;overflow:auto;overscroll-behavior:contain;background:#fff;border:1px solid #cbd5e1;border-radius:10px;margin-top:.45rem;scrollbar-width:thin}
+#sidebar #portal-search-results[hidden]{display:none!important}
+#sidebar .portal-result{display:block;width:100%;text-align:left;padding:.6rem .65rem;border:0;border-bottom:1px solid #e2e8f0;border-radius:0;background:#fff;color:#172033;cursor:pointer;line-height:1.35;font-family:inherit}
+#sidebar .portal-result:last-child{border-bottom:0}
+#sidebar .portal-result-title{display:block;font-weight:800;font-size:.8rem;color:inherit}
+#sidebar .portal-result-path{display:block;font-size:.65rem;color:#475569;margin-top:.15rem;overflow-wrap:anywhere}
+#sidebar .portal-result:hover,#sidebar .portal-result.selected,#sidebar .portal-result:focus-visible{background:#e0e7ff;color:#172033;outline:2px solid #f59e0b;outline-offset:-2px}
+#sidebar .portal-search-status{font-size:.65rem;line-height:1.4;color:#f8fafc;margin-top:.3rem}
+#sidebar .portal-no-match{padding:.8rem;color:#475569;font-size:.8rem}
+#sidebar .portal-search-mini{display:none;width:100%;border:1px solid #94a3b8;border-radius:10px;background:#fff;color:#172033;padding:.5rem;cursor:pointer}
+@media(min-width:901px){body.sb-mini #sidebar .portal-search-full{display:none}body.sb-mini #sidebar .portal-search-mini{display:block}}
+html[data-theme="dark"] #sidebar .portal-search-field,html[data-theme="dark"] #sidebar #portal-search,html[data-theme="dark"] #sidebar #portal-search-results,html[data-theme="dark"] #sidebar .portal-result{background:#172033!important;border-color:#475569!important;color:#f8fafc!important}
+html[data-theme="dark"] #sidebar .portal-result-path,html[data-theme="dark"] #sidebar .portal-no-match{color:#cbd5e1!important}
+html[data-theme="dark"] #sidebar .portal-result:hover,html[data-theme="dark"] #sidebar .portal-result.selected,html[data-theme="dark"] #sidebar .portal-result:focus-visible{background:#334155!important;color:#fff!important}
+
 .notice{border-radius:10px;padding:.5rem .75rem;font-size:.84rem;display:flex;flex-wrap:wrap;gap:.15rem .4rem;align-items:flex-start;line-height:1.4;min-width:0;overflow-wrap:anywhere}
 .notice.warn{background:var(--warnbg);color:#7a5200;border:1px solid #f0d9a8}
 .notice.info{background:var(--infobg);color:#1c3f94;border:1px solid #c3d4f7}
@@ -4510,6 +4534,12 @@ function emailOptionsHTML(fn, sn, on, domain, selected){
   return html;
 }
 
+/* Teacher registration: keep a wrap-safe full address visible below the native selector. */
+function refreshTeacherEmailPreview(pfx){
+  if(pfx!=='tr') return;
+  const sel=$('#tr-em-sel'), output=$('#tr-email-value');
+  if(sel&&output){ output.textContent=sel.value; sel.title=sel.value; }
+}
 A.syncLoginEmailDropdown = function(pfx){
   const sel = $('#' + pfx + '-em-sel');
   if(!sel) return;
@@ -4543,6 +4573,7 @@ A.syncLoginEmailDropdown = function(pfx){
     if(pfx === 'js') REG.data.email = finalVal;
     else if(pfx === 'tr') REG.data.em = finalVal;
   }
+  refreshTeacherEmailPreview(pfx);
 };
 
 A.onEmailDropdownChange = function(pfx){
@@ -4555,6 +4586,7 @@ A.onEmailDropdownChange = function(pfx){
     if(pfx === 'js') REG.data.email = val;
     else if(pfx === 'tr') REG.data.em = val;
   }
+  refreshTeacherEmailPreview(pfx);
 };
 
 
@@ -6358,17 +6390,18 @@ function mediaRehydrate(m, d){ let n=0; if(!m||!d) return 0;
     (d.events||[]).forEach(ev=>{ if(ev&&!ev.img&&m.ev[ev.id]){ ev.img=m.ev[ev.id]; n++; } }); }catch(e){}
   return n; }
 let _syncChain=Promise.resolve();   /* Round-81d: the serialized push chain (below) */
-function syncPush(){ const c=syncCfg(); if(!c.bin||!c.mk) return Promise.resolve('skip'); if(!syncOnline()) return Promise.resolve('offline');
+function syncPush(featureTx){ const c=syncCfg(); if(!c.bin||!c.mk) return Promise.resolve('skip'); if(!syncOnline()) return Promise.resolve('offline');
   /* Round-81d: SERIAL PUSH CHAIN (replaces the Round-67b "busy slot-poll"). That design was beaten TWICE in one
      day: (1) busy-requeue storms could out-run the gzip stream pump and starve the mid-flight pack forever
      (Round-81c); (2) cloudPublish's retries could race AHEAD of a still-packing in-flight push and burn out all
      their tries — registrations showed "not published" while their publish was still mid-air. A promise chain
      gives ordered hand-off with REAL event-loop yields between links: no storms, no starvation, and a wait that
      is exact in every timer world. Union-merge + tombstone rules on the cloud record are unchanged. */
-  const p=_syncChain.catch(()=>{}).then(()=>schLimitedSync(()=>syncPushInner()));
+  const work=()=>schLimitedSync(()=>syncPushInner(featureTx));
+  const p=_syncChain.catch(()=>{}).then(()=>typeof navigator!=='undefined'&&navigator.locks&&navigator.locks.request?navigator.locks.request('herems-cloud-sync-R220',work):work());
   _syncChain=p.catch(()=>{});
   return p; }
-async function syncPushInner(){
+async function syncPushInner(featureTx){
   _syncBusy=true;
   const c=syncCfg();
   try{
@@ -6383,10 +6416,16 @@ async function syncPushInner(){
     if(!(gr&&gr.ok)) throw new Error('HTTP '+((gr&&gr.status)||'?')+await httpErrNote(gr));
     const gj=await gr.json(); const grec=await unpackBinRec(gj);
     if(!grec||!grec.data||!grec.data.settings||typeof grec.data.settings!=='object') throw new Error('Cloud record is invalid — refusing to overwrite it. Restore or initialize the cloud record first.');   // Round-77: packed OR plain OR wrapped
-    const stamp=Date.now(); let snap=slimForCloud(Object.assign({}, DB, {session:null}));   // device session + MEDIA never sync (Round-81)
+    const stamp=Date.now();let snap;
+    if(featureTx){
+      /* Feature-only publication: preserve the freshly fetched cloud data byte-for-byte in value.
+         Never upload stale local students, money, marks or settings with a feature delta. */
+      snap=nfStageSnapshot(JSON.parse(JSON.stringify(grec.data)),grec.data,featureTx);
+    }else{
+      snap=slimForCloud(Object.assign({}, DB, {session:null}));   // device session + MEDIA never sync (Round-81)
     if(grec&&grec.data&&grec.data.settings){
       const remote=grec.data; const out=Object.assign({}, snap);
-      SYNC_UNION.concat(RECORD_UNION).forEach(k=>{ out[k]= k==='schools'?mergeSchoolsJoined(snap[k],remote[k]):k==='users'? mergeUsersNewestPw(snap[k], remote[k]) : mergeUnionById(snap[k], remote[k]); });   // local-first: the pusher's own edits win per id, cloud-only items survive · Round-84: users merge by NEWEST password stamp — a stale device can never re-publish mustChange:true over a fresh change   /* Round-92b: records union too — a push can never wipe the cloud */
+      SYNC_UNION.concat(RECORD_UNION).forEach(k=>{ out[k]= k==='schools'?mergeSchoolsJoined(snap[k],remote[k],remote[k]):k==='users'? mergeUsersNewestPw(snap[k], remote[k]) : mergeUnionById(snap[k], remote[k]); });   // local-first: the pusher's own edits win per id, cloud-only items survive · Round-84: users merge by NEWEST password stamp — a stale device can never re-publish mustChange:true over a fresh change   /* Round-92b: records union too — a push can never wipe the cloud */
       mergeSyncMaps(out, snap, remote);
       out.tomb=mergeTomb(cloudTombOf(snap), cloudTombOf(remote));   /* Round-92: only Super-Admin SCHOOL deletes may travel */
       applyCloudTomb(out);                                        /* …and only those graves are honoured in the cloud record */
@@ -6402,12 +6441,17 @@ async function syncPushInner(){
     snap=stripArchivedYears(snap);   /* Round-82: rolled years must never be re-published — not even by a device that was offline for months */
     snap=stripDemoForCloud(snap);    /* Round-86: the demo school (random ids every run) can never outrun tombstones — so it simply NEVER leaves the device; this also scrubs demo records the cloud already holds */
     snap=slimForCloud(snap);
+    }
     const body=await packBinBody({ app:'HEREMS_PLUS', stamp, device:deviceId(), data:snap });   /* Round-77: SYNC PACK — gzip when supported (free-tier 100KB guard) */
     const bodyStr=JSON.stringify(body);
     /* R213: let the configured provider enforce its actual size quota, not a fixed free-tier app cap. */   /* Round-81: fail LOUD + CLEAR before burning a 403 */
+    if(featureTx){featureTx.phase='sending';nfJournalIntent(featureTx);}
     const r=await cloudFetch(c,'PUT',bodyStr);   /* Round-180 */
-    if(!(r&&r.ok)) throw new Error('HTTP '+((r&&r.status)||'?')+await httpErrNote(r));
-    setSyncStamp(stamp); lastSyncErr(''); _syncBusy=false; return 'pushed';
+    if(!(r&&r.ok)){if(featureTx)nfClearIntent(featureTx.schoolId);throw new Error('HTTP '+((r&&r.status)||'?')+await httpErrNote(r));}
+    setSyncStamp(stamp); lastSyncErr(''); _syncBusy=false;
+    if(featureTx){featureTx.putOk=true;featureTx.phase='uploaded';try{nfJournalIntent(featureTx);}catch(e){}featureTx.confirmed=await nfVerifyTransaction(c,featureTx);if(!featureTx.confirmed){nfRememberUnverified(featureTx);return 'pushed_unverified';}}
+    if(featureTx&&featureTx.confirmed)nfRememberReceipt(featureTx);
+    return 'pushed';
   }catch(e){ lastSyncErr(e&&e.message||e); _syncBusy=false; return 'error'; } }
 /* Round-53: merge-safe adoption — registration-critical arrays UNION by id (remote version wins per id),
    so a school registering on ANOTHER device — or a note made here — is never wiped by a pull.
@@ -6424,11 +6468,13 @@ function mergeSyncMaps(out, primary, secondary){
 /* Joining is a one-way state: a stale PENDING copy must never reopen a redeemed code. */
 function schoolHasJoined(s,users){ return !!(s&&(String(s.joinStatus||'').toUpperCase()==='JOINED'||Number(s.joinedAt)>0||(users||[]).some(u=>u&&u.role==='schooladmin'&&u.schoolId===s.id))); }
 function reconcileSchoolJoins(data){ (data.schools||[]).forEach(s=>{if(schoolHasJoined(s,data.users)){s.joinStatus='JOINED';s.joinActive=false;}});return data; }
-function mergeSchoolsJoined(primary,secondary){
-  const rows=mergeUnionById(primary,secondary),all=(primary||[]).concat(secondary||[]);
-  return rows.map(s=>{const evidence=all.filter(x=>x&&s&&x.id===s.id&&schoolHasJoined(x));if(!evidence.length)return s;
-    const stamps=evidence.map(x=>Number(x.joinedAt)||0).filter(x=>x>0);
-    return Object.assign({},s,{joinStatus:'JOINED',joinActive:false},stamps.length?{joinedAt:Math.min(...stamps)}:{});});
+function mergeSchoolsJoined(primary,secondary,featureSource){
+ const rows=mergeUnionById(primary,secondary),all=(primary||[]).concat(secondary||[]);
+ return rows.map(row=>{let s=Object.assign({},row);const peer=(secondary||[]).find(x=>x&&x.id===s.id);if(peer&&peer.featureSchemaSeen)s.featureSchemaSeen=1;const source=featureSource&&(featureSource||[]).find(x=>x&&x.id===s.id);
+ if(source){s.features=nfMergeFeatureMaps(source.features,s.features);const remembered=nfMergeFeatureMaps(row&&row.features,peer&&peer.features);const lost=Object.keys(remembered).filter(id=>{const old=remembered[id],remote=source.features&&source.features[id];return old&&old.changeId&&(!remote||(Number(remote.revision)||0)<(Number(old.revision)||0));});if(lost.length)s.featureSyncWarning='Cloud is missing newer feature records on this device. Review before publishing: '+lost.join(', ');else delete s.featureSyncWarning;}else if(s.features||(peer&&peer.features))s.features=nfMergeFeatureMaps(s.features,peer&&peer.features);
+ const evidence=all.filter(x=>x&&s&&x.id===s.id&&schoolHasJoined(x));if(!evidence.length)return s;
+ const stamps=evidence.map(x=>Number(x.joinedAt)||0).filter(x=>x>0);return Object.assign(s,{joinStatus:'JOINED',joinActive:false},stamps.length?{joinedAt:Math.min(...stamps)}:{});
+ });
 }
 function mergeUnionById(remoteArr, localArr){
   const seen=new Set(), out=[];
@@ -6453,7 +6499,7 @@ const SYNC_UNION=['schools','users','notes','messages','pwReq','tplReq','events'
    adopt, before they ever publish. Union merges run by id in BOTH directions (on push, the pusher's own
    edits win per id; on pull, the cloud copy wins per id); removals happen ONLY via the Super-Admin
    school-delete cascade (schools+users graves — everything else stays, per policy). */
-const RECORD_UNION=['students','payments','canteenPay','expenditure','salaryPay','activity','audits','prefects','committees','outbox'];
+const RECORD_UNION=['students','payments','canteenPay','expenditure','salaryPay','activity','audits','activities','prefects','committees','outbox'];
 /* Round-73: TOMBSTONES — deletions SYNC too. A pure union can never delete (a cloud-only survivor is always
    kept — that is the anti-wipe), so "Super Admin deleted a school" never reached other devices: the school
    resurrected on the next sync. Now a deletion records a marker {c:<collection>, id, ts}; every merge (push
@@ -6471,7 +6517,7 @@ function mergeTomb(a, b){ const byKey={};
 function recordDeath(coll, id){ DB.tomb=mergeTomb(DB.tomb, [{c:coll, id:id, ts:Date.now()}]); }
 /* Round-80: enforce against EVERY id-bearing record array, not just the sync-union ones — a death recorded
    for students/payments/etc (e.g. inside a portable school file) must bury the record everywhere too. */
-const TOMB_COLLS=SYNC_UNION.concat(['students','payments','canteenPay','expenditure','salaryPay','activity','audits','prefects','committees','outbox']);
+const TOMB_COLLS=SYNC_UNION.concat(['students','payments','canteenPay','expenditure','salaryPay','activity','audits','activities','prefects','committees','outbox']);
 function applyTomb(d){ if(!d) return d; const dead={};
   tombOf(d).forEach(t=>{ dead[t.c+'|'+t.id]=1; });
   TOMB_COLLS.forEach(k=>{ if(Array.isArray(d[k])) d[k]=d[k].filter(x=>{ if(!x||x.id===undefined||x.id===null) return true; return !dead[k+'|'+x.id]; }); });
@@ -6625,7 +6671,7 @@ async function syncPull(quiet, force){ const c=syncCfg(); if(!c.bin||!c.mk) retu
       const sess=DB.session; const beforeIds=new Set((DB.schools||[]).map(x=>x.id));
       const beforeReqIds=new Set((DB.syncReq||[]).map(x=>x.id));   /* Round-93 */
       const remote=rec.data;
-      SYNC_UNION.concat(RECORD_UNION).forEach(k=>{ remote[k]= k==='schools'?mergeSchoolsJoined(remote[k],DB&&DB[k]):k==='users'? mergeUsersNewestPw(remote[k], DB&&DB[k]) : mergeUnionById(remote[k], DB&&DB[k]); });   // Round-84: per user id, the copy with the NEWEST pwChangedAt/pwResetAt wins — a fresh password change can never be rolled back by a stale side   /* Round-92b: an adopt can never wipe un-pushed records on this device */
+      SYNC_UNION.concat(RECORD_UNION).forEach(k=>{ remote[k]= k==='schools'?mergeSchoolsJoined(remote[k],DB&&DB[k],remote[k]):k==='users'? mergeUsersNewestPw(remote[k], DB&&DB[k]) : mergeUnionById(remote[k], DB&&DB[k]); });   // Round-84: per user id, the copy with the NEWEST pwChangedAt/pwResetAt wins — a fresh password change can never be rolled back by a stale side   /* Round-92b: an adopt can never wipe un-pushed records on this device */
       reconcileSchoolJoins(remote);
       mergeSyncMaps(remote, remote, DB);
       remote.tomb=mergeTomb(cloudTombOf(remote), tombOf(DB));  /* Round-92: adopt Super-Admin SCHOOL deletes · keep THIS device's own local graves · junk cloud graves are ignored */
@@ -7395,7 +7441,7 @@ function schLimitedSync(work){
       localStorage.setItem(key,JSON.stringify({day:day,used:used}));
     }catch(e){ return 'quota-storage'; }
     const result=await work();
-    if(result==='pushed'){
+    if(result==='pushed'||result==='pushed_unverified'){
       // Count once per completed upload, not per replica or refresh. Charge the starting day.
       const rec={day:day,used:used+1}; _schQuotaMemory[key]=rec;
       try{localStorage.setItem(key,JSON.stringify(rec));}catch(e){
@@ -10318,15 +10364,17 @@ function teacherRegHTML(inApp){
       <select id="tr-gender"><option value="">— choose —</option><option ${d.gender==='Male'?'selected':''}>Male</option><option ${d.gender==='Female'?'selected':''}>Female</option></select></div>
       <div></div>
     </div>
-    <div class="frow c2">
-      <div><label>Phone *</label><input id="tr-ph" value="${esc(d.ph||'')}" placeholder="0244 000 000"></div>
-      <div>
-        <label>Login Email * <span class="mut">(format: firstname@${esc(schoolEmailDomain(s, false))})</span></label>
-        <select id="tr-em-sel" style="font-weight:700;color:var(--brand);background:#f0f9ff;border:1.5px solid #38bdf8;padding:.6rem .75rem" onchange="A.onEmailDropdownChange('tr')">
+    <div class="frow c2 tr-contact-row">
+      <div><label for="tr-ph">Phone *</label><input id="tr-ph" type="tel" autocomplete="tel" value="${esc(d.ph||'')}" placeholder="0244 000 000"></div>
+      <div class="tr-login-field">
+        <label for="tr-em-sel">Login Email *</label>
+        <div id="tr-email-format" class="tr-email-format">Format: <span>firstname@${esc(schoolEmailDomain(s, false))}</span></div>
+        <select id="tr-em-sel" aria-describedby="tr-email-format tr-email-help tr-email-value" style="font-weight:700;color:var(--brand);background:#f0f9ff;border:1.5px solid #38bdf8;padding:.6rem .75rem" onchange="A.onEmailDropdownChange('tr')">
           ${emailOptionsHTML(d.fn||'', d.sn||'', d.on||'', schoolEmailDomain(s, false), d.em||'')}
         </select>
         <input type="hidden" id="tr-em" value="${esc(d.em||'')}">
-        <div class="small mut mt1" style="font-size:.76rem">💡 Auto-generated dropdown. Select any preferred option.</div>
+        <div class="tr-email-preview"><span class="tr-email-caption">Selected login email</span><output id="tr-email-value" for="tr-em-sel" aria-live="polite">${esc((d.em||'').trim().toLowerCase()||generateEmailOptions(d.fn||'',d.sn||'',d.on||'',schoolEmailDomain(s,false))[0]||'')}</output></div>
+        <div id="tr-email-help" class="small mut tr-email-help">💡 Choose your preferred auto-generated login email.</div>
       </div>
     </div>
     <div style="margin-bottom:1rem">
@@ -10774,6 +10822,627 @@ A.pReg2=function(){
 A.addTeacherWizard=function(){ REG={step:2,data:{code:mySchool().code}}; rerenderTeacherStage(true); };
 </script>
 <script>
+/* ================= R220 · SUPER ADMIN FEATURE MANAGEMENT ================= */
+/* ============================================================================
+   R220 · SUPER ADMIN FEATURE MANAGEMENT SYSTEM
+   ----------------------------------------------------------------------------
+   School assignments live on DB.schools[].features and travel through cloud sync.
+   Versioned records preserve sequential changes; whole-bin writes remain
+   non-atomic. Offline / legacy clients and concurrent writers require reconciliation.
+   This browser implementation is NOT server-side authorization.
+
+   States (per feature, per school):
+     off        — not assigned: hidden from sidebar, URL, search and guards
+     countdown  — released by the Super Admin, in its mandatory 15-day wait
+     ready      — countdown finished; the school's admin must install it
+     active     — installed: fully available to the school
+
+   Feature transactions change assignments and notifications/audit entries only.
+   They preserve other values from a fresh cloud read. Existing bundled portals
+   are activated here; there is no executable-package deployment service.
+   ============================================================================ */
+window.NF_RELEASE_DAYS = 15;   /* mandatory SaaS release countdown */
+const NF_DAY_MS = 86400000;
+
+/* ---------- the catalogue: real modules, sub-portals and applications ---------- */
+function nfReleaseDate(s,f){const r=nfRec(s,f.id);return r&&r.appliedAt?new Date(r.appliedAt).toLocaleDateString('en-GB'):'Bundled · R220';}
+function nfCat(id, group, name, desc, page, sub, icon, release){
+  return {id:id, group:group, name:name, desc:desc, page:page, sub:sub||null, icon:icon||'grid', release:{v:APP_VER, d:'Bundled · R220'}};
+}
+function featureCatalog(){ return [
+  /* Academics */
+  nfCat('myclasses','Academics','My Classes','Teacher-assigned classes and their students.','myclasses',null,'school'),
+  nfCat('mydebt','Finance','My Debtors','Class-teacher view of student balances and reminders.','mydebt',null,'banknote'),
+  nfCat('dashboard','Academics','Dashboard','School-wide KPIs, grade trend, enrollment and outstanding fees at a glance.','dashboard',null,'grid',{v:'2.1.9',d:'2026-08-18'}),
+  nfCat('students','Academics','Students Portal','The active student register, directory, profiles and the Student Board.','students',null,'graduation',{v:'2.1.9',d:'2026-08-18'}),
+  nfCat('nf-students-register','Academics','Student Register','A to Z register with photos, ages, houses and guardian contacts.','students','register','graduation',{v:'2.1.10',d:'2026-09-02'}),
+  nfCat('nf-students-passport','Academics','Passport Pictures','Upload, review and approve student passport photographs.','students','passport','user-plus',{v:'2.1.10',d:'2026-09-02'}),
+  nfCat('admissions','Academics','Admissions','New enrollment portal with live admission counters and gender insights.','admissions',null,'user-plus',{v:'2.1.9',d:'2026-08-18'}),
+  nfCat('archives','Academics','Archives','Stopped and old-student folders, restore and permanent delete.','archives',null,'archive',{v:'2.1.9',d:'2026-08-18'}),
+  nfCat('teachers','Academics','Staff','Teaching and non-teaching registers with salaries and duties.','teachers',null,'id-card',{v:'2.1.9',d:'2026-08-18'}),
+  nfCat('subjects','Academics','Subjects','NaCCA subject list, stream assignment matrix and class setup.','subjects',null,'book-open',{v:'2.1.9',d:'2026-08-18'}),
+  nfCat('promote','Academics','Promote Students','Automatic promotion with promotion fees and next-class roll-over.','promote',null,'trending-up',{v:'2.1.9',d:'2026-08-18'}),
+  nfCat('scores','Academics','Scores & Conversion','Score entry, conversion rules, aggregates and class score sheets.','scores',null,'calculator',{v:'2.1.9',d:'2026-08-18'}),
+  nfCat('nf-scores-perf','Academics','Performance & Aggregates','Class performance reviews and converted aggregate analysis.','scores','perf','calculator',{v:'2.1.11',d:'2026-09-14'}),
+  nfCat('nf-scores-sheets','Academics','Class Score Sheets','Printable score sheets for every class, subject and exam type.','scores','sheets','calculator',{v:'2.1.11',d:'2026-09-14'}),
+  nfCat('attendance','Academics','Attendance & Terms','Daily register, term totals grid, absence follow-up and term dates.','attendance',null,'calendar',{v:'2.1.9',d:'2026-08-18'}),
+  nfCat('nf-attendance-grid','Academics','Term Totals Grid','Whole-school attendance totals for the whole term, class by class.','attendance','grid','calendar',{v:'2.1.12',d:'2026-09-21'}),
+  nfCat('comments','Academics','Comments','Terminal conduct, attitude and interest comments with teacher overrides.','comments',null,'message',{v:'2.1.9',d:'2026-08-18'}),
+  nfCat('reports','Academics','Terminal Reports','Report cards, watermarks, grading legends and bulk printing.','reports',null,'chart',{v:'2.1.9',d:'2026-08-18'}),
+  nfCat('termset','Academics','Term Settings','Academic year, term dates, holidays and exam windows.','termset',null,'calendar',{v:'2.1.9',d:'2026-08-18'}),
+  nfCat('nf-teacherboard','Academics','Teacher Board','Per-teacher details, assignments and subject performance comparisons.','teacherboard',null,'users',{v:'2.1.13',d:'2026-09-28'}),
+  /* School life */
+  nfCat('houses','School Life','Houses','House colours, points and the pupils who belong to each house.','houses',null,'home',{v:'2.1.9',d:'2026-08-18'}),
+  nfCat('prefects','School Life','Prefects','Prefects and protocol appointments with gender rules.','prefects',null,'award',{v:'2.1.9',d:'2026-08-18'}),
+  nfCat('committees','School Life','Teacher Committees','Committees, members, announcements and meeting schedules.','committees',null,'users',{v:'2.1.9',d:'2026-08-18'}),
+  nfCat('pta','School Life','PTA Register','Guardians grouped by class, with on-portal status and contacts.','pta',null,'clipboard',{v:'2.1.9',d:'2026-08-18'}),
+  nfCat('ptac','School Life','PTA Committee','PTA board, meetings, agenda and parent messaging.','ptac',null,'star',{v:'2.1.9',d:'2026-08-18'}),
+  nfCat('events','School Life','Events','School calendar with upcoming and past events, photos and notes.','events',null,'calendar',{v:'2.1.9',d:'2026-08-18'}),
+  /* Finance */
+  nfCat('fees','Finance','Fees','Term fee setup, admission sheets, payments and receipts.','fees',null,'banknote',{v:'2.1.9',d:'2026-08-18'}),
+  nfCat('nf-fees-pay','Finance','Payments & Receipts','The payment desk — take money, print an official receipt instantly.','fees','pay','receipt',{v:'2.1.10',d:'2026-09-02'}),
+  nfCat('nf-fees-dash','Finance','Fees Dashboard','Collection trend, arrears ageing and per-class collection graphs.','fees','dash','chart',{v:'2.1.11',d:'2026-09-14'}),
+  nfCat('nf-fees-rcpt','Finance','Receipts Archive','Every receipt issued, searchable and reprintable at any time.','fees','rcpt','receipt',{v:'2.1.11',d:'2026-09-14'}),
+  nfCat('nf-fees-schol','Finance','Scholarship Fees','Sponsored and protocol pupils who pay only the admin-set fees.','fees','schol','users',{v:'2.1.12',d:'2026-09-21'}),
+  nfCat('nf-fees-termend','Finance','Term-End Bills','Term-end bills with carried balances and bulk printing.','fees','termend','receipt',{v:'2.1.12',d:'2026-09-21'}),
+  nfCat('nf-fees-promo','Finance','Promotion Fees','Promotion fee rules for pupils moving to the next class.','fees','promo','trending-up',{v:'2.1.12',d:'2026-09-21'}),
+  nfCat('nf-fees-struct','Finance','Class Structures','Fee structures per class and stream, with the audit of changes.','fees','struct','book-open',{v:'2.1.12',d:'2026-09-21'}),
+  nfCat('debt','Finance','Debt Tracking','Who owes what, ageing by term and guardian follow-up messages.','debt',null,'banknote',{v:'2.1.9',d:'2026-08-18'}),
+  nfCat('canteen','Finance','Canteen','Daily canteen taking, monthly billing, sheets and manual totals.','canteen',null,'food',{v:'2.1.9',d:'2026-08-18'}),
+  nfCat('nf-canteen-print','Finance','Canteen Print Sheets','Physical canteen register sheets for offline schools.','canteen','print','food',{v:'2.1.12',d:'2026-09-21'}),
+  nfCat('salaries','Finance','Staff Salaries','Monthly salary runs, deductions and payment history for staff.','salaries',null,'coins',{v:'2.1.9',d:'2026-08-18'}),
+  nfCat('expenditure','Finance','Expenditure','School spending by category with cash-flow review.','expenditure',null,'receipt',{v:'2.1.9',d:'2026-08-18'}),
+  nfCat('audit','Finance','Audit & Accountability','Income against outflow, notes and accountability sheets.','audit',null,'clipboard',{v:'2.1.9',d:'2026-08-18'}),
+  /* Communication */
+  nfCat('messages','Communication','Communication Center','Super Admin, school admin, staff and PTA messaging with read state.','messages',null,'mail',{v:'2.1.9',d:'2026-08-18'}),
+  nfCat('nf-messages-sms','Communication','SMS Outbox','Every SMS the school sent, with provider and delivery status.','settings','smslog','mail',{v:'2.1.12',d:'2026-09-21'}),
+  /* Reports & data */
+  nfCat('profile','Account','School Profile & About','School identity, crest, signature, grade boundaries and About page.','profile',null,'school',{v:'2.1.9',d:'2026-08-18'}),
+  nfCat('personalise','Account','Personalise','Themes, fonts and zoom for a school\u2019s own look and feel.','personalise',null,'palette',{v:'2.1.9',d:'2026-08-18'}),
+  nfCat('settings','Account','Settings','Users, fee allocation, grading, security, SMS and subscription.','settings',null,'cog',{v:'2.1.9',d:'2026-08-18'}),
+  nfCat('updates','Account','Updates & Data','Sync windows, folder fusion, backups and app updates.','updates',null,'refresh',{v:'2.1.9',d:'2026-08-18'}),
+  nfCat('nf-sync','Account','Cloud Sync','Deliberate upload and download of school records to the cloud.','sync',null,'cloud',{v:'2.1.10',d:'2026-09-02'})
+];}
+function featureById(id){ return featureCatalog().find(f=>f.id===id) || null; }
+function nfGroups(){ const g=[]; featureCatalog().forEach(f=>{ if(g.indexOf(f.group)<0) g.push(f.group); }); return g; }
+
+/* ---------- per-school state ---------- */
+function nfSchoolById(id){ return (DB.schools||[]).find(s=>s.id===id) || null; }
+function nfRec(sch,id){ return sch&&sch.features&&sch.features[id]||null; }
+function nfMigrate(sch){ /* Inherited access is computed only; never mass-write live schools. */ }
+function featureState(sch,id){
+  const r=nfRec(sch,id);
+  if(!r||!r.status) return nfCore(id)?'active':nfWasManaged(sch)?'off':featureById(id)&&!featureById(id).defaultOff?'active':'off';
+  if(r.status==='countdown' && Date.now()>=Number(r.releaseAt||0)) return 'ready';
+  return r.status;
+}
+function featureIsNew(sch,id){ const r=nfRec(sch,id); return !!(r&&r.appliedAt&&Number(r.releaseAt||0)>0); }   /* entered through the 15-day release lane */
+function featureActive(sch,id){ return featureState(sch,id)==='active'; }
+function featureReady(sch,id){ const s=featureState(sch,id); return s==='ready'; }
+function nfRemaining(sch,id){ const r=nfRec(sch,id); if(!r) return 0; return Math.max(0, Number(r.releaseAt||0)-Date.now()); }
+function nfActiveCount(sch){ return featureCatalog().filter(f=>featureActive(sch,f.id)).length; }
+function nfReadyList(sch){ return featureCatalog().filter(f=>featureReady(sch,f.id)); }
+function nfCountdownList(sch){ return featureCatalog().filter(f=>featureState(sch,f.id)==='countdown'); }
+function nfPendingDeploymentCount(){ return (DB.schools||[]).reduce((n,s)=>n+nfCountdownList(s).length,0); }
+function nfReadyForInstallCount(){ return (DB.schools||[]).reduce((n,s)=>n+nfReadyList(s).length,0); }
+
+/* ---------- enforcement: sidebar, direct URL, search, guards ---------- */
+function nfPageFeature(p){
+ const aliases={mocks:'scores',canteenprint:'canteen',canteenmanual:'canteen',passport:'students',directory:'students',genderana:'admissions',stubord:'students',studentboard:'students',schoolabout:'profile'};
+ return featureCatalog().find(f=>!f.sub&&f.page===(aliases[p]||p))||null;
+}        /* the portal itself */
+function nfSubFeatures(p){ return featureCatalog().filter(x=>x.page===p && x.sub); }
+function nfSchoolForUser(u){ return (u&&u.schoolId)? nfSchoolById(u.schoolId) : null; }
+function nfAllowedForRole(u,p){
+  if(!u) return false;
+  if(u.role==='superadmin'||u.role==='parent') return true;   /* the parent portal is the school's own page, never a module */
+  return u.role==='schooladmin'||u.role==='teacher';
+}
+function featurePageAllowed(u,p){
+  if(!nfAllowedForRole(u,p)) return true;                      /* Super Admin & parent pages keep their own rules */
+  if(!p || String(p).indexOf('nf:')===0) return true;          /* synthetic feature doors are checked by their own state */
+  const sch=nfSchoolForUser(u); if(!sch) return true;
+  const own=nfPageFeature(p);
+  if(own && featureActive(sch,own.id)) return true;
+  if(own && featureState(sch,own.id)!=='off') return true;     /* countdown/ready: shown locked, opened only when active */
+  const subs=nfSubFeatures(p);
+  if(subs.length && subs.some(f=>featureActive(sch,f.id))) return true;
+  return !own;                                                 /* a page with no feature record at all is untouched */
+}
+function featureNavBlocked(p){
+  const u=me(); if(!u) return false;
+  if(!nfAllowedForRole(u,p)) return false;
+  const sch=nfSchoolForUser(u); if(!sch) return false;
+  const own=nfPageFeature(p); if(!own) return false;
+  return !featureActive(sch,own.id);
+}
+function nfStubAllowed(u,stub){   /* the synthetic sidebar door of a sub-portal feature */
+  if(!u||String(stub).indexOf('nf:')!==0) return true;
+  const f=featureById(String(stub).slice(3)); if(!f) return false;
+  const sch=nfSchoolForUser(u); if(!sch) return false;
+  return featureActive(sch,f.id);
+}
+function nfRowOn(n){   /* highlight a sub-portal door while its module + tab are open */
+  if(!n||!n.feat) return false;
+  const f=featureById(n.feat); if(!f||!f.sub) return false;
+  if(PAGE!==f.page) return false;
+  try{ return nfCurrentSub(f)===f.sub; }catch(e){ return false; }
+}
+function nfCurrentSub(f){
+ if(f.page==='fees')return FE.tab;if(f.page==='scores')return SC.view;if(f.page==='attendance')return AT.view;if(f.page==='students')return STU_TAB;if(f.page==='canteen')return CT.tab;if(f.page==='settings')return SET_TAB;return null;
+}
+function featureOpen(id){const f=featureById(id);if(!f||!canAccess(f.page)||!nfSubAllowed(f.page,f.sub))return nfDeny(f);nfSetSub(f.page,f.sub);go(f.page);} 
+
+/* ---------- sidebar wiring ---------- */
+function featureInjectNav(u){ /* Navigation is derived without mutating shared role menus. */ }
+function nfNavRows(u){
+ const base=(NAV[u.role]||[]).filter(n=>!n.feat);if(!nfEnforced(u)) return base;
+ const s=nfSchoolForUser(u),out=[];
+ base.forEach(n=>{
+  if(n.sec){out.push(n);return;}
+  const owner=nfPageFeature(n.p),st=owner?featureState(s,owner.id):'active';
+  if(st==='off')return;
+  out.push(st==='active'?n:Object.assign({},n,{lock:st,feat:owner.id,on:"A.nfSchoolFeatureInfo('"+owner.id+"')"}));
+  if(st==='active')nfSubFeatures(n.p).forEach(f=>{const t=featureState(s,f.id);if(t!=='countdown'&&t!=='ready')return;out.push({p:'nf-lock:'+f.id,t:f.name,i:'🔒',feat:f.id,lock:t,on:"A.nfSchoolFeatureInfo('"+f.id+"')"});});
+ });return out.filter((n,i)=>!n.sec||out.slice(i+1).some((v,j)=>j===0&&!v.sec));
+}
+
+/* ---------- the school's notification card ---------- */
+let NF_TICK=null, NF_LAST_READY='', NF_CONFETTI='';
+function featureNotificationHTML(s){
+  const u=me(); if(!u||!s||u.role!=='schooladmin') return '';
+  const ready=nfReadyList(s), coming=nfCountdownList(s);
+  if(!ready.length&&!coming.length) return '';
+  if(ready.length) return nfReadyCardHTML(s,ready);
+  return nfCountdownCardHTML(s,coming[0],coming.length-1);
+}
+function nfFmtRemain(ms){
+  const t=Math.max(0,Math.floor(ms/1000));
+  const d=Math.floor(t/86400), h=Math.floor(t%86400/3600), m=Math.floor(t%3600/60), sec=t%60;
+  const p=n=>String(n).padStart(2,'0');
+  return {d:d,h:p(h),m:p(m),s:p(sec), text:d+' Day'+(d===1?'':'s')+' '+p(h)+':'+p(m)+':'+p(sec)};
+}
+function nfCountdownCardHTML(s,f,more){
+  const t=nfFmtRemain(nfRemaining(s,f.id));
+  return `<div class="nf-hero mb2" data-nf-card="${esc(f.id)}">
+    <div class="nf-hero-glow" aria-hidden="true"></div>
+    <div class="nf-hero-body">
+      <span class="nf-rocket" aria-hidden="true">🚀</span>
+      <div class="nf-hero-copy">
+        <span class="nf-eyebrow">NEW FEATURE ARRIVING SOON</span>
+        <h3>${esc(f.name)}${more?` <span class="nf-more">+${more} more scheduled</span>`:''}</h3>
+        <p>A powerful new feature has been approved for your school and is currently being prepared for deployment.</p>
+        <div class="nf-clock" role="timer" aria-live="off" aria-label="Time until ${esc(f.name)} can be installed">
+          ${[['d','Days',t.d],['h','Hrs',t.h],['m','Min',t.m],['s','Sec',t.s]].map(x=>`<div class="nf-unit"><b data-nf-unit="${x[0]}">${x[2]}</b><span>${x[1]}</span></div>`).join('')}
+        </div>
+        <div class="nf-hero-line">⏳ Activates in <b data-nf-text="${esc(f.id)}">${t.text}</b></div>
+        <div class="nf-hero-actions">
+          <button class="btn gold" data-tip="We will tell you the moment it is ready" onclick="A.nfNotifyMe('${esc(f.id)}')">🔔 Notify Me When Available</button>
+          <button class="btn ghost" onclick="A.nfOpenSchoolUpdates()">⚡ Updates &amp; Data Synchronization</button>
+        </div>
+        <div class="nf-hero-note">Your administration team will be able to install this feature once the timer reaches zero.</div>
+      </div>
+    </div>
+  </div>`;
+}
+function nfReadyCardHTML(s,ready){
+  const f=ready[0];
+  return `<div class="nf-hero nf-hero-ready mb2" data-nf-card="${esc(f.id)}">
+    <div class="nf-hero-glow" aria-hidden="true"></div>
+    <div class="nf-hero-body">
+      <span class="nf-rocket" aria-hidden="true">🎉</span>
+      <div class="nf-hero-copy">
+        <span class="nf-eyebrow">NEW FEATURE READY</span>
+        <h3>${esc(f.name)}${ready.length>1?` <span class="nf-more">+${ready.length-1} more ready</span>`:''}</h3>
+        <p>Your feature package is ready for installation. Click below to activate the update.</p>
+        <div class="nf-ready-meta">
+          <span class="badge ok">READY TO INSTALL</span>
+          <span class="nf-meta">Version <b>${esc(f.release.v)}</b></span>
+          <span class="nf-meta">Release date <b>${esc(nfReleaseDate(s,f))}</b></span>
+        </div>
+        <div class="nf-hero-actions">
+          <button class="btn gold big" data-tip="Download the package, synchronize data and activate ${esc(f.name)}" onclick="A.nfInstall('${esc(f.id)}')">⚡ Install Update Now</button>
+          <button class="btn ghost" onclick="A.nfOpenSchoolUpdates()">⚡ Open Updates &amp; Data Synchronization</button>
+        </div>
+        <div class="nf-hero-note">Nothing changes until you install it — your current data stays exactly as it is.</div>
+      </div>
+    </div>
+  </div>`;
+}
+function nfStartTick(){
+ if(NF_TICK)return;NF_TICK=setInterval(()=>{try{
+ const u=me();if(!u)return;const sch=nfSchoolForUser(u);
+ document.querySelectorAll('[data-nf-card],[data-nf-timer]').forEach(card=>{const id=card.dataset.nfCard||card.dataset.nfTimer;if(!sch)return;const t=nfFmtRemain(nfRemaining(sch,id));[['d',t.d],['h',t.h],['m',t.m],['s',t.s]].forEach(([k,v])=>{const el=card.querySelector('[data-nf-unit="'+k+'"]');if(el)el.textContent=v;});const text=card.querySelector('[data-nf-text]');if(text)text.textContent=featureState(sch,id)==='ready'?'Ready For Installation':t.text;});
+ let changed=false;const schools=u.role==='superadmin'?(DB.schools||[]):u.role==='schooladmin'&&sch?[sch]:[];
+ schools.forEach(s=>featureCatalog().forEach(f=>{const r=nfRec(s,f.id);if(r&&r.status==='countdown'&&featureState(s,f.id)==='ready'&&!r.readyNotifiedAt){r.readyNotifiedAt=Date.now();changed=true;nfNote(s,'🎉 '+esc(f.name)+' is ready for installation. Open Updates & Data Synchronization.','nfready');nfAudit(s,f.name,'Countdown completed','Pending Deployment','Ready For Installation',{byName:'System countdown',byRole:'system'});if(sch&&sch.id===s.id)NF_CONFETTI=f.id;}}));
+ if(changed){saveDB();renderShell();if(PAGE==='dashboard'||PAGE==='updates')render();}
+ if(NF_CONFETTI){NF_CONFETTI='';nfConfetti();}
+ }catch(e){console.warn('Feature countdown:',e.message);}},1000);
+}
+function nfStopTick(){ if(NF_TICK){ clearInterval(NF_TICK); NF_TICK=null; } }
+function nfConfetti(){
+  if(document.querySelector('.nf-confetti')) return;
+  const box=document.createElement('div'); box.className='nf-confetti'; box.setAttribute('aria-hidden','true');
+  const colors=['#10b981','#38bdf8','#f59e0b','#a855f7','#f43f5e','#facc15'];
+  for(let i=0;i<44;i++){
+    const s=document.createElement('span');
+    s.style.left=(Math.random()*100).toFixed(2)+'%';
+    s.style.background=colors[i%colors.length];
+    s.style.animationDelay=(Math.random()*0.6).toFixed(2)+'s';
+    s.style.animationDuration=(2.2+Math.random()*1.8).toFixed(2)+'s';
+    box.appendChild(s);
+  }
+  document.body.appendChild(box);
+  setTimeout(()=>{ try{ box.remove(); }catch(e){} },4600);
+}
+
+/* ---------- notifications, messages, audit ---------- */
+function nfNote(sch,text,kind){
+ const sink=NF_CAPTURE?NF_CAPTURE:DB;sink.notes=sink.notes||[];if(sink.notes.some(n=>n.kind===kind&&n.schoolId===sch.id&&n.text===text))return;
+ sink.notes.push({id:uid('n'),kind:kind||'nffeat',schoolId:sch.id,text,ts:Date.now(),read:false});
+}
+function nfMessageSchool(sch,subject,body){
+ const sa=(DB.users||[]).find(u=>u.role==='superadmin');if(!sa)return;const sink=NF_CAPTURE||DB;sink.messages=sink.messages||[];
+ (DB.users||[]).filter(u=>u.role==='schooladmin'&&u.schoolId===sch.id).forEach(adm=>sink.messages.push({id:uid('m'),schoolId:sch.id,scope:'sa',fromId:sa.id,fromName:sa.name||'Super Administrator',fromRole:'superadmin',toId:adm.id,subject,text:body,ts:Date.now(),read:[]}));
+}
+function nfDevice(){
+  const nav=(typeof navigator!=='undefined'&&navigator)||{};
+  return {ua:String(nav.userAgent||'unknown').slice(0,180), platform:String(nav.platform||''), screen:(typeof screen!=='undefined'&&screen)?screen.width+'×'+screen.height:'—'};
+}
+function nfAudit(sch,feature,action,from,to,extra){
+  const u=me()||{};
+  const d=nfDevice();
+  const sink=NF_CAPTURE||DB;sink.activities=sink.activities||[];
+  sink.activities.push(Object.assign({
+    id:uid('act'), schoolId:sch&&sch.id||'', schoolName:sch&&sch.name||'—',
+    feature:feature||'—', action:action, from:from||'—', to:to||'—',
+    ts:Date.now(), byName:u.name||'—', byRole:u.role||'—',
+    ip:String((nfIpCache()||{}).ip||'Not captured'), device:(d.platform||'')+' · '+(d.screen||''), ua:d.ua
+  }, extra||{}));
+}
+let NF_IP=null, NF_IP_TRIED=false;
+function nfIpCache(){ return NF_IP; }
+function nfCaptureIp(){
+  if(NF_IP_TRIED) return; NF_IP_TRIED=true;
+  try{
+    if(typeof fetch!=='function') return;
+    const ctl=(typeof AbortController==='function')? new AbortController() : null;
+    const timer=ctl? setTimeout(()=>{ try{ ctl.abort(); }catch(e){} },4000) : null;
+    fetch('https://api.ipify.org?format=json', ctl?{signal:ctl.signal}:{}).then(r=>r.json()).then(j=>{
+      if(j&&j.ip) NF_IP={ip:j.ip, ts:Date.now()};
+      if(timer) clearTimeout(timer);
+    }).catch(()=>{ if(timer) clearTimeout(timer); });
+  }catch(e){}
+}
+
+/* ---------- Super Admin · the Feature Management Portal ---------- */
+let NF_SCHOOL=null, NF_DRAFT=new Map(), NF_SYNC='idle', NF_Q='';
+function nfSt(S){ return featureState(NF_SCHOOL,S); }
+function nfLabel(st){
+  return st==='active'? '✅ Active' : st==='countdown'? '⏳ Pending Deployment' : st==='ready'? '🎉 Ready For Installation' : '🚫 Not Assigned';
+}
+function nfAvail(st){
+  return st==='active'? 'Available now' : st==='countdown'? 'Locked until the countdown ends' : st==='ready'? 'Waiting for the school to install' : 'Hidden from this school';
+}
+function nfLastUpdated(id){
+  const r=nfRec(NF_SCHOOL,id);
+  const ts=r&&Math.max(r.installedAt||0,r.disabledAt||0,r.appliedAt||0,r.updatedAt||0);
+  return ts? new Date(ts).toLocaleString('en-GB',{day:'numeric',month:'short',year:'numeric',hour:'2-digit',minute:'2-digit'}) : '—';
+}
+function nfDraft(id){ return NF_DRAFT.has(id)?NF_DRAFT.get(id):featureState(NF_SCHOOL,id)!=='off'; }
+function nfPendingChanges(){ return featureCatalog().filter(f=>!nfCore(f.id)&&NF_DRAFT.has(f.id)&&nfDraft(f.id)!==(featureState(NF_SCHOOL,f.id)!=='off')); }
+function nfToggle(id,el){
+ if(NF_SYNC==='syncing'||nfCore(id)) return;
+ NF_DRAFT.set(id,!!(el&&el.checked));
+ const card=document.querySelector('[data-nf-feature="'+id+'"]'),changed=nfDraft(id)!==(featureState(NF_SCHOOL,id)!=='off');
+ if(card){ card.classList.toggle('nf-changed',changed);card.classList.toggle('nf-will-on',changed&&nfDraft(id));card.classList.toggle('nf-will-off',changed&&!nfDraft(id));const b=card.querySelector('[data-nf-planned]');if(b)b.innerHTML=changed?'<span class="nf-plan">Planned change — not applied yet</span>':''; }
+ const n=nfPendingChanges().length,b=document.getElementById('nf-apply'),c=document.getElementById('nf-bar-count');if(c)c.textContent=n;if(b){b.disabled=!n;b.classList.toggle('nf-ready',!!n);}
+}
+function nfCardHTML(f,index){
+  const st=nfSt(f.id), want=nfDraft(f.id), changed=want!==(st!=='off');
+  const opening=st==='active';
+  return `<article class="nf-card ${changed?'nf-changed':''} ${changed&&want?'nf-will-on':''} ${changed&&!want?'nf-will-off':''}" data-nf-feature="${esc(f.id)}" style="--nf-i:${index}">
+    <header class="nf-card-head">
+      <span class="nf-card-ico" aria-hidden="true">${esc(f.icon==='grid'?'▦':'◆')}</span>
+      <div class="nf-card-title">
+        <h4>${esc(f.name)}</h4>
+        <span class="nf-group">${esc(f.group)}</span>
+      </div>
+      <label class="nf-switch" data-tip="${opening?'Turn this feature OFF for this school':'Turn this feature ON for this school'}">
+        <input type="checkbox" role="switch" aria-label="${esc(f.name)}" ${want?'checked':''} ${nfCore(f.id)||NF_SYNC==='syncing'?'disabled':''} onchange="A.nfToggle('${esc(f.id)}',this)">
+        <span class="nf-slider" aria-hidden="true"></span>
+      </label>
+    </header>
+    <p class="nf-desc">${esc(f.desc)}</p>${nfCore(f.id)?'<div class="small mut">Essential access · always available</div>':!nfRec(NF_SCHOOL,f.id)?'<div class="small mut">Existing access preserved · inherited</div>':''}
+    <dl class="nf-meta-grid">
+      <div><dt>Current status</dt><dd>${nfLabel(st)}</dd></div>
+      <div><dt>Availability</dt><dd>${nfAvail(st)}</dd></div>
+      <div><dt>Release status</dt><dd>v${esc(f.release.v)} · ${esc(nfReleaseDate(NF_SCHOOL,f))}</dd></div>
+      <div><dt>Last updated</dt><dd>${nfLastUpdated(f.id)}</dd></div>
+    </dl>
+    ${st==='countdown'?`<div class="nf-lane">⏳ ${esc(nfFmtRemain(nfRemaining(NF_SCHOOL,f.id)).text)} until it can be installed</div>`:''}
+    ${st==='ready'?`<div class="nf-lane ok">🎉 Ready for installation — waiting on the school</div>`:''}
+    <div data-nf-planned>${changed?'<span class="nf-plan">Planned change — not applied yet</span>':''}</div>
+  </article>`;
+}
+function renderFeatures(){
+  const u=me();
+  if(!u||u.role!=='superadmin') return '<div class="card"><div class="notice warn">Feature Management is available to the Super Administrator only.</div></div>';
+  const sch=nfSchoolById(PARAM)||nfSchoolById(NF_SCHOOL&&NF_SCHOOL.id)||null;
+  if(!sch) return nfSchoolListHTML();
+  NF_SCHOOL=sch;
+  if(!sch) return '<div class="card"><div class="notice info">Register a school first — features are assigned per school.</div><div class="mt2"><button class="btn gold" onclick="go(\'schools\')">🏫 Open Register A School</button></div></div>';
+  nfMigrate(sch);
+  const pending=nfPendingChanges();
+  const q=String(NF_Q||'').trim().toLowerCase();
+  const list=featureCatalog().filter(f=>!q||(f.name+' '+f.desc+' '+f.group).toLowerCase().includes(q));
+  const counts={active:nfActiveCount(sch), cd:nfCountdownList(sch).length, ready:nfReadyList(sch).length};
+  return `<div class="nf-portal">
+    <div class="nf-topcard">
+      <div class="nf-topcard-main">
+        <span class="nf-crest" aria-hidden="true">${sch.logo?`<img src="${sch.logo}" alt="">`:'🏫'}</span>
+        <div>
+          <div class="nf-crumb"><button class="btn sm ghost" onclick="A.nfSchoolList()">All schools</button> › Feature Management</div>
+          <h2>${esc(sch.name)} <span class="badge ${schoolHasJoined(sch,DB.users)?'ok':'gold'}">${schoolHasJoined(sch,DB.users)?'JOINED':'PENDING'}</span></h2>
+          <div class="small mut">${esc(sch.code||'')} · ${esc(sch.location||'—')} · ${featureCatalog().length} modules &amp; applications available on this plan</div>
+          <div class="nf-chips">
+            <span class="nf-chip ok">✅ ${counts.active} active</span>
+            <span class="nf-chip gold">⏳ ${counts.cd} pending deployment</span>
+            <span class="nf-chip ready">🎉 ${counts.ready} ready to install</span>
+          </div>
+        </div>
+      </div>
+      <div class="nf-topcard-side">
+        <label class="nf-search" for="nf-q"><span aria-hidden="true">🔍</span><input id="nf-q" type="search" placeholder="Search features…" value="${esc(NF_Q)}" oninput="A.nfSearch(this.value)"></label>
+        <div class="nf-sync ${NF_SYNC==='syncing'?'syncing':NF_SYNC==='ok'?'ok':NF_SYNC==='failed'?'failed':''}" role="status" aria-live="polite" id="nf-sync-state">
+          ${NF_SYNC==='syncing'?'<span class="spin dark"></span> Syncing…':NF_SYNC==='ok'?'✅ Sync Successful — cloud read-back verified':NF_SYNC==='failed'?'⚠️ Sync Failed — draft retained; no local assignments changed. Retry or pull to reconcile.':'Cloud sync idle'}
+        </div>
+      </div>
+    </div>
+    ${nfGroups().map(g=>{
+      const rows=list.filter(f=>f.group===g); if(!rows.length) return '';
+      return `<section class="nf-group-block"><h3 class="nf-group-head">${esc(g)} <span class="badge info">${rows.length}</span></h3>
+        <div class="nf-grid">${rows.map((f,i)=>nfCardHTML(f,i)).join('')}</div></section>`;
+    }).join('')}
+    <div class="nf-bar" id="nf-bar">
+      <div class="nf-bar-info"><b id="nf-bar-count">${pending.length}</b> planned change${pending.length===1?'':'s'}
+        <div class="small mut">Existing access stays unchanged until a plan is published. Every OFF → ON release waits 15 days, then requires school-admin installation. Dashboard, Updates and Cloud Sync remain available for recovery.</div></div>
+      <button id="nf-apply" class="btn gold big ${pending.length?'nf-ready':''}" ${pending.length&&NF_SYNC!=='syncing'?'':'disabled'} onclick="A.nfApply()">⚡ Apply Features &amp; Sync to Cloud</button>
+    </div>
+    <div class="notice warn small">Preview controls only: server-side school authorization, authoritative timing and an immutable audit service and atomic cloud writes are still required before production. Legacy clients and concurrent devices can overwrite whole-cloud snapshots. Bundled features are activated here; no new application code is downloaded.</div>${nfPendingIntentHTML(sch)}${nfAuditHTML(sch)}
+  </div>`;
+}
+function nfAuditHTML(sch){
+  const rows=(DB.activities||[]).filter(a=>a.schoolId===sch.id).slice(-60).reverse();
+  return `<section class="nf-audit card">
+    <div class="flex between wrap" style="align-items:center;gap:.5rem">
+      <h3 style="margin:0">🧾 Audit log <span class="badge info">${rows.length}</span></h3>
+      <div class="flex" style="gap:.4rem">
+        <button class="btn sm ghost" onclick="A.nfAuditCopy('${esc(sch.id)}')">📋 Copy</button>
+        <button class="btn sm ghost" onclick="A.nfAuditCSV('${esc(sch.id)}')">⬇️ CSV</button>
+      </div>
+    </div>
+    <div class="small mut mb2">Every administrative action is recorded — school, feature, action, previous and new status, date &amp; time, administrator, IP address and device.</div>
+    <div class="table-wrap"><table class="nf-tbl"><thead><tr><th>When</th><th>Feature</th><th>Action</th><th>Previous</th><th>New</th><th>Administrator</th><th>IP address</th><th>Device</th></tr></thead><tbody>
+    ${rows.map(a=>`<tr><td class="small">${new Date(a.ts).toLocaleString('en-GB',{day:'numeric',month:'short',year:'numeric',hour:'2-digit',minute:'2-digit',second:'2-digit'})}</td>
+      <td class="small b">${esc(a.feature)}</td><td class="small">${esc(a.action)}</td>
+      <td class="small">${esc(String(a.from))}</td><td class="small b">${esc(String(a.to))}</td>
+      <td class="small">${esc(a.byName||'—')}<div class="mut">${esc(roleLabel(a.byRole))}</div></td>
+      <td class="small">${esc(a.ip||'—')}</td><td class="small mut">${esc(a.device||'—')}<div class="mut" style="max-width:280px">${esc(String(a.ua||'').slice(0,90))}</div></td></tr>`).join('')
+      ||'<tr><td colspan="8" class="center mut" style="padding:1.4rem">No administrative actions recorded for this school yet.</td></tr>'}
+    </tbody></table></div></section>`;
+}
+A.nfSearch=function(v){NF_Q=v;render();const el=$('#nf-q');if(el)el.focus();};
+A.nfToggle=function(id,el){ nfToggle(id,el); };
+A.nfOpenSchool=function(id){if(NF_SYNC==='syncing')return;NF_SCHOOL=nfSchoolById(id);NF_DRAFT=new Map();NF_Q='';NF_SYNC='idle';closeModal();go('features',id);};
+A.nfApply=async function(){
+ const u=me();if(!u||u.role!=='superadmin'||NF_SYNC==='syncing')return;
+ const sch=nfSchoolById(NF_SCHOOL&&NF_SCHOOL.id),pending=nfPendingChanges();if(!sch||!pending.length)return;
+ NF_SYNC='syncing';render();
+ if(await nfReconcileUnverified(sch.id)){NF_SYNC='idle';render();return;}
+ const tx=nfTransaction(sch,'plan');NF_CAPTURE=tx;
+ try{pending.forEach(f=>{const before=featureState(sch,f.id),on=nfDraft(f.id),old=nfRec(sch,f.id)||{},now=Date.now();
+ tx.base[f.id]=nfToken(old);tx.features[f.id]=Object.assign({},old,{status:on?'countdown':'off',releaseAt:on?now+15*NF_DAY_MS:0,appliedAt:now,updatedAt:now,appliedBy:u.name,revision:(Number(old.revision)||0)+1,changeId:tx.id,version:f.release.v,readyNotifiedAt:0,installedAt:0,pulledAt:0,notify:false});
+ nfAudit(sch,f.name,on?'Feature scheduled':'Feature disabled',nfLabel(before),nfLabel(on?'countdown':'off'));
+ if(on){nfNote(sch,'🚀 '+esc(f.name)+' is approved. The 15-day release countdown has started; your administrator can install it after expiry.','nfcount');nfMessageSchool(sch,'🚀 New feature arriving: '+f.name,'Your approved feature is pending deployment. Check the live dashboard countdown; installation is required after 15 days.');}
+ });nfAudit(sch,'Feature plan','Cloud publication confirmed',pending.length+' planned change(s)','Published');}finally{NF_CAPTURE=null;}
+ NF_SYNC='syncing';render();let result='error';try{result=await syncPush(tx);}catch(e){}
+ if(result==='pushed'&&tx.confirmed&&me()&&me().id===u.id){nfCommit(tx);NF_DRAFT=new Map();NF_SYNC='ok';toast('✅ Sync Successful — cloud read-back verified','ok');}
+ else{NF_SYNC='failed';toast('Sync Failed — draft retained. Retry, or pull to reconcile a possibly completed upload.','bad');}render();return result;
+};
+A.nfNotifyMe=function(id){const u=me(),s=nfSchoolForUser(u),f=featureById(id);if(!u||u.role!=='schooladmin'||!s||!f||!['countdown','ready'].includes(featureState(s,id)))return;const rec=nfRec(s,id);if(!rec)return;rec.notify=true;nfAudit(s,f.name,'School asked to be notified',nfLabel(featureState(s,id)),nfLabel(featureState(s,id)));nfNote(s,'🔔 Notifications enabled for '+esc(f.name),'nfnotify');saveDB();toast('You will be notified when '+f.name+' is ready.','ok');};
+A.nfSchoolFeatureInfo=function(id){const u=me(),s=nfSchoolForUser(u),f=featureById(id);if(!nfEnforced(u)||!s||!f||!['countdown','ready'].includes(featureState(s,id)))return;openModal(mHead('🔒 FEATURE LOCKED')+'<div class="m-body nf-lock" data-nf-timer="'+esc(id)+'">'+nfLockedNoticeBody(s,f)+'</div>');};
+/* blocked module tap during the countdown */
+function nfLockedNoticeHTML(f,sch){
+  const t=nfFmtRemain(nfRemaining(sch,f.id));
+  return `<div class="card nf-lockwrap"><div class="nf-lock-ico">🔒</div>
+    <h3 class="mt1">FEATURE LOCKED</h3>
+    <p class="mut mt1">This feature has been scheduled for deployment by your System Administrator.</p>
+    <div class="nf-lock-timer">Release countdown: <b>${featureState(sch,f.id)==='ready'?'Ready now':t.text}</b></div>
+    <p class="mut small">This feature will become available after deployment and update synchronization.</p>
+    <div class="mt2 flex"><button class="btn gold" onclick="A.nfNotifyMe('${esc(f.id)}')">🔔 Notify Me When Available</button>
+    <button class="btn ghost" onclick="go('dashboard')">Back to dashboard</button></div></div>`;
+}
+/* ---------- school side · Updates & Data Synchronization ---------- */
+function featureInstallSectionHTML(s){
+  const u=me(); if(!u||!s||u.role!=='schooladmin') return '';
+  const ready=nfReadyList(s), coming=nfCountdownList(s), installed=featureCatalog().filter(f=>featureActive(s,f.id)&&nfRec(s,f.id)&&nfRec(s,f.id).installedAt);
+  if(!ready.length&&!coming.length&&!installed.length) return '';
+  const row=f=>{
+    const st=featureState(s,f.id);
+    return `<tr data-nf-row="${esc(f.id)}">
+      <td class="b">${esc(f.name)}<div class="small mut">${esc(f.desc)}</div></td>
+      <td class="small">v${esc(f.release.v)}</td>
+      <td class="small">${esc(nfReleaseDate(s,f))}</td>
+      <td>${st==='active'?'<span class="badge ok">Installed</span>':st==='ready'?'<span class="badge gold">Ready To Install</span>':`<span class="badge info">Pending · ${esc(nfFmtRemain(nfRemaining(s,f.id)).text)}</span>`}</td>
+      <td class="nf-tbl-actions">
+        ${st==='ready'?`<button class="btn sm ghost" data-tip="Download the package without activating it yet" onclick="A.nfPull('${esc(f.id)}')">⬇️ Pull Latest Update</button>
+          <button class="btn sm gold" data-tip="Download, synchronize and activate now" onclick="A.nfInstall('${esc(f.id)}')">⚡ Pull Update &amp; Activate</button>`
+        :st==='active'?`<span class="small mut">Available in your sidebar</span>`
+        :`<button class="btn sm ghost" onclick="A.nfNotifyMe('${esc(f.id)}')">🔔 Notify Me</button>`}
+      </td></tr>`;
+  };
+  return `<div class="card nf-upd mb2" id="nf-updates">
+    <div class="flex between wrap" style="align-items:center;gap:.5rem">
+      <h3 style="margin:0">⚡ Updates &amp; Data Synchronization</h3>
+      <span class="badge ${ready.length?'gold':'info'}">${ready.length?ready.length+' ready to install':coming.length?coming.length+' pending deployment':installed.length+' installed'}</span>
+    </div>
+    <div class="small mut mb2">New features arrive here first. Nothing is added to your sidebar until your administration installs it.</div>
+    <div class="table-wrap"><table class="nf-tbl"><thead><tr><th>Feature name</th><th>Version</th><th>Release date</th><th>Installation status</th><th>Actions</th></tr></thead><tbody>
+      ${ready.concat(coming,installed).map(row).join('')}
+    </tbody></table></div>
+    <div id="nf-install-log" class="nf-install-log" role="status" aria-live="polite"></div>
+  </div>`;
+}
+A.nfOpenSchoolUpdates=function(){ if(PAGE!=='updates') go('updates'); const el=document.getElementById('nf-updates'); if(el) el.scrollIntoView({block:'start',behavior:'smooth'}); };
+function nfStages(activate){
+  return ['Preparing Update','Downloading Package','Synchronizing Data','Installing Components','Installation Successful'];
+}
+async function nfRunInstall(id,activate){
+ const u=me(),s=nfSchoolForUser(u),f=featureById(id);
+ if(!u||u.role!=='schooladmin'||!s||!f||featureState(s,id)!=='ready'||!nfRec(s,id)||nfRemaining(s,id)>0||NF_INSTALL_BUSY)return toast('Only this school’s administrator may install a ready release.','bad');
+ NF_INSTALL_BUSY=true;
+ if(await nfReconcileUnverified(s.id)){NF_INSTALL_BUSY=false;return;}
+ const old=nfRec(s,id),tx=nfTransaction(s,activate?'install':'pull');tx.base[id]=nfToken(old);
+ tx.features[id]=Object.assign({},old,{status:activate?'active':'countdown',revision:(Number(old.revision)||0)+1,changeId:tx.id,updatedAt:Date.now(),pulledAt:Date.now(),...(activate?{installedAt:Date.now(),installedBy:u.name,delivered:true}:{})});
+ NF_CAPTURE=tx;nfAudit(s,f.name,activate?'Feature installed':'Release package verified',nfLabel('ready'),nfLabel(activate?'active':'ready'));if(activate)nfNote(s,'✅ '+esc(f.name)+' was installed by your school administration.','nfinst');NF_CAPTURE=null;
+ openModal(mHead('⚡ '+(activate?'Pull Update &amp; Activate':'Pull Latest Update'))+`<div class="m-body nf-install"><div class="nf-install-head">${esc(f.name)} · v${esc(f.release.v)}</div><p class="small mut">Components are bundled with this app. This verifies release metadata and synchronizes the ${activate?'activation':'package-readiness'} record; it does not download new application code.</p><ol class="nf-steps">${nfStages().map((v,i)=>`<li id="nf-step-${i}"><span class="nf-dot"></span>${v}</li>`).join('')}</ol><div class="nf-progress"><i id="nf-progress"></i></div><div id="nf-stage-note" role="status"></div></div><div class="m-foot" id="nf-foot"></div>`);
+ const stage=(n,text)=>{const li=$('#nf-step-'+n),bar=$('#nf-progress'),note=$('#nf-stage-note');if(li)li.classList.add('on');if(bar)bar.style.width=((n+1)*20)+'%';if(note)note.textContent=text;};
+ try{stage(0,'Checking administrator and release eligibility…');await new Promise(r=>setTimeout(r,180));stage(1,'Using the release components bundled in this app…');await new Promise(r=>setTimeout(r,180));stage(2,'Publishing and verifying cloud state…');const result=await syncPush(tx);
+ if(result!=='pushed'||!tx.confirmed)throw Error('Cloud synchronization or read-back verification failed. Pull to reconcile, then retry.');
+ if(!me()||me().id!==u.id||nfToken(nfRec(nfSchoolById(s.id),id))!==tx.base[id])throw Error('The session or feature plan changed. Pull the latest state before retrying.');
+ stage(3,activate?'Enabling the bundled components…':'Release verified; activation is still required.');nfCommit(tx);stage(4,activate?'Installation Successful':'Package verified — not activated');
+ const foot=$('#nf-foot');if(foot)foot.innerHTML=`<div class="nf-done">${activate?'✅ Feature Successfully Installed':'⬇️ Package ready — still locked'}</div><button class="btn ghost" onclick="A.closeModal()">Close</button>`;
+ renderShell();render();
+ }catch(e){const note=$('#nf-stage-note');if(note)note.textContent='Sync Failed — '+e.message;const foot=$('#nf-foot');if(foot)foot.innerHTML='<button class="btn ghost" onclick="A.closeModal()">Close</button>';toast(e.message,'bad');}finally{NF_INSTALL_BUSY=false;}
+}
+A.nfInstall=function(id){ nfRunInstall(id,true); };
+A.nfPull=function(id){ nfRunInstall(id,false); };
+
+/* ---------- Super Admin dashboard widget ---------- */
+function nfSuperWidgetHTML(){
+  const u=me(); if(!u||u.role!=='superadmin') return '';
+  const pending=nfPendingDeploymentCount(), ready=nfReadyForInstallCount();
+  const rows=(DB.schools||[]).map(sch=>{
+    nfMigrate(sch);
+    const cd=nfCountdownList(sch).length, rd=nfReadyList(sch).length;
+    return {sch, cd, rd, active:nfActiveCount(sch)};
+  }).filter(r=>r.cd||r.rd||true);
+  return `<div class="card nf-super mb2">
+    <div class="flex between wrap" style="align-items:center;gap:.5rem">
+      <h3 style="margin:0">⚙️ Feature management <span class="badge info">${featureCatalog().length} features</span></h3>
+      <div class="flex" style="gap:.4rem"><button class="btn sm gold" onclick="A.nfSchoolList()">Open Feature Management →</button>
+      <button class="btn sm ghost" onclick="A.nfSchoolList()">Assign features</button></div>
+    </div>
+    <div class="small mut mb2">Existing school access is preserved. Choose a school to stage a feature plan, publish it, and track its 15-day release and installation.</div>
+    <div class="nf-kpis">
+      <div class="nf-kpi"><b>${(DB.schools||[]).length}</b><span>Schools</span></div>
+      <div class="nf-kpi"><b>${pending}</b><span>Pending deployment</span></div>
+      <div class="nf-kpi"><b>${ready}</b><span>Ready for installation</span></div>
+      <div class="nf-kpi"><b>${(DB.activities||[]).length}</b><span>Audit entries</span></div>
+    </div>
+    <div class="table-wrap"><table class="nf-tbl"><thead><tr><th>School</th><th>Active features</th><th>Pending deployment</th><th>Ready to install</th><th></th></tr></thead><tbody>
+      ${rows.map(r=>`<tr><td class="b">${esc(r.sch.name)}<div class="small mut">${esc(r.sch.code||'')}</div></td>
+        <td>${r.active}</td><td>${r.cd?`<span class="badge info">${r.cd}</span>`:'—'}</td><td>${r.rd?`<span class="badge gold">${r.rd}</span>`:'—'}</td>
+        <td><button class="btn sm" onclick="A.nfOpenSchool('${esc(r.sch.id)}')">⚙️ Manage features</button></td></tr>`).join('')
+        ||'<tr><td colspan="5" class="center mut">No schools registered yet</td></tr>'}
+    </tbody></table></div>
+  </div>`;
+}
+/* ---------- audit export ---------- */
+function nfAuditRows(schoolId){return me()&&me().role==='superadmin'?(DB.activities||[]).filter(a=>!schoolId||a.schoolId===schoolId):[];}
+A.nfAuditCSV=function(schoolId){
+  const rows=nfAuditRows(schoolId);
+  if(!rows.length) return toast('Nothing to download yet','bad');
+  const head=['Date & Time','School','Feature','Action','Previous status','New status','Administrator','Role','IP address','Device','User agent'];
+  const lines=[head.join(',')].concat(rows.map(a=>[new Date(a.ts).toISOString(),a.schoolName,a.feature,a.action,a.from,a.to,a.byName,roleLabel(a.byRole),a.ip,a.device,a.ua].map(x=>'"'+nfCsvCell(x).replace(/"/g,'""')+'"').join(',')));
+  const blob=new Blob(['\ufeff'+lines.join('\n')],{type:'text/csv'});
+  const a=document.createElement('a'); a.href=URL.createObjectURL(blob);
+  a.download='herems-feature-audit-'+todayISO()+'.csv'; a.click();
+  toast('⬇️ Audit log downloaded','ok');
+};
+A.nfAuditCopy=async function(schoolId){
+  const rows=nfAuditRows(schoolId);
+  if(!rows.length) return toast('Nothing to copy yet','bad');
+  const text=rows.map(a=>new Date(a.ts).toISOString()+' · '+a.schoolName+' · '+a.feature+' · '+a.action+' · '+a.from+' → '+a.to+' · '+a.byName+' ('+roleLabel(a.byRole)+') · IP '+a.ip+' · '+a.device).join('\n');
+  try{ await navigator.clipboard.writeText(text); toast('📋 Audit log copied','ok'); }
+  catch(e){ toast('Clipboard blocked — use ⬇️ CSV instead','bad'); }
+};
+
+/* Compatibility and transaction helpers. These are client controls, NOT a trust boundary. */
+let NF_CAPTURE=null,NF_INSTALL_BUSY=false;
+function nfCore(id){return ['dashboard','updates','nf-sync'].includes(id);}
+function nfEnforced(u){return !!(u&&['schooladmin','teacher','parent'].includes(u.role)&&nfSchoolForUser(u));}
+function nfSetSub(p,k){if(k==null)return;if(p==='fees')FE.tab=k;else if(p==='scores')SC.view=k;else if(p==='attendance')AT.view=k;else if(p==='students')STU_TAB=k;else if(p==='canteen')CT.tab=k;else if(p==='settings')SET_TAB=k;}
+function nfSubFeature(p,k){if(p==='students'&&String(k).startsWith('passport'))k='passport';return featureCatalog().find(f=>f.page===p&&f.sub===k)||null;}
+function nfSubAllowed(p,k){const u=me();if(!nfEnforced(u))return true;const f=nfSubFeature(p,k),s=nfSchoolForUser(u);return !f||featureActive(s,f.id);}
+function nfDeny(f){const s=nfSchoolForUser(me());if(f&&s&&['countdown','ready'].includes(featureState(s,f.id)))A.nfSchoolFeatureInfo(f.id);else toast('This feature is not available for your school.','bad');return false;}
+function nfRequireSub(p,k){if(!canAccess(p))return nfDeny(nfPageFeature(p));if(nfSubAllowed(p,k))return true;return nfDeny(nfSubFeature(p,k));}
+function nfGuardSub(p){if(!nfEnforced(me()))return '';const f=featureCatalog().find(f=>f.page===p&&f.sub&&nfCurrentSub(f)===f.sub);if(!f||nfSubAllowed(p,f.sub))return '';const s=nfSchoolForUser(me());const choices={fees:['setup','newadm','pay','rcpt','dash','schol','struct','promo','termend'],scores:['entry','perf','sheets'],students:['register','passport'],attendance:['daily','grid'],canteen:['overview','print','manual'],settings:['users','security','sms','smslog']};const alternatives=(choices[p]||[]).filter(k=>nfSubAllowed(p,k)).map(k=>'<button class="btn ghost sm" onclick="A.nfChooseSub(\''+p+'\',\''+k+'\')">'+esc(k)+'</button>').join('');return (featureState(s,f.id)==='off'?'<div class="card notice warn">This sub-portal is disabled for your school.</div>':nfLockedNoticeHTML(f,s))+'<div class="flex wrap" style="gap:.5rem">'+alternatives+'</div>';}
+A.nfChooseSub=function(p,k){if(!nfRequireSub(p,k))return;nfSetSub(p,k);go(p);};
+function nfMaskTabs(content){
+ if(!nfEnforced(me()))return content;
+ const t=document.createElement('template');t.innerHTML=content;
+ t.content.querySelectorAll('[onclick]').forEach(el=>{const click=el.getAttribute('onclick')||'';let p=null,k=null,m;
+ const specs=[['fees','feTab'],['scores','scView'],['attendance','atView'],['students','stuTab']];
+ for(const [page,method] of specs){m=click.match(new RegExp('A\\.'+method+"\\('([^']+)'\\)"));if(m){p=page;k=m[1];break;}}
+ if(!p&&(m=click.match(/(?:SET_TAB|CT.tab)='([^']+)'/))){p=click.includes('SET_TAB')?'settings':'canteen';k=m[1];}
+ const f=p&&nfSubFeature(p,k);if(!f||nfSubAllowed(p,k))return;const st=featureState(nfSchoolForUser(me()),f.id);
+ if(st==='off')el.remove();else{el.setAttribute('onclick',"A.nfSchoolFeatureInfo('"+f.id+"')");el.textContent='🔒 '+f.name;el.setAttribute('aria-label',f.name+' — locked');}
+ });return t.innerHTML;
+}
+function nfSearchAllowed(e){if(!canAccess(e.page)||String(e.id).startsWith('nf-lock:'))return false;const key=e.id.slice(e.id.indexOf(':')+1);if(!nfSubAllowed(e.page,key))return false;if(e.id==='stubord:payment'&&featureBlocked('fees'))return false;return true;}
+function nfCsvCell(value){const s=String(value==null?'':value);return /^[\s]*[=+@-]/.test(s)?"'"+s:s;}
+function nfToken(r){return JSON.stringify(r?{status:r.status||'',revision:Number(r.revision)||0,changeId:r.changeId||'',releaseAt:Number(r.releaseAt)||0,version:r.version||''}:{});}
+function nfMergeFeatureMaps(primary,secondary){
+ const out=Object.assign({},secondary||{});Object.entries(primary||{}).forEach(([id,p])=>{if(!p)return;const s=out[id];const score=r=>[Number(r&&r.revision)||0,Number(r&&(r.updatedAt||r.appliedAt||r.installedAt))||0,String(r&&r.changeId||'')];const a=score(p),b=score(s);
+ if(!s||a[0]>b[0]||a[0]===b[0]&&(a[1]>b[1]||a[1]===b[1]&&a[2]>=b[2]))out[id]=Object.assign({},p);
+ });return out;
+}
+function nfTransaction(s,kind){return {id:uid('nftx'),schoolId:s.id,actorId:me().id,kind,base:{},features:{},notes:[],messages:[],activities:[],confirmed:false};}
+function nfStageSnapshot(snap,remote,tx){
+ if(!tx)return snap;const u=me();if(!u||u.id!==tx.actorId)throw Error('Feature transaction session changed');const local=nfSchoolById(tx.schoolId);Object.keys(tx.features).forEach(id=>{if(nfToken(nfRec(local,id)||{})!==tx.base[id])throw Error('Local feature state changed while publishing. Review and retry.');});
+ const target=(snap.schools||[]).find(s=>s.id===tx.schoolId),cloud=(remote.schools||[]).find(s=>s.id===tx.schoolId);if(!target||!cloud)throw Error('School must exist in the cloud before assigning features');
+ if(tx.kind==='plan'&&u.role!=='superadmin')throw Error('Super Administrator only');
+ if(tx.kind!=='plan'&&(u.role!=='schooladmin'||u.schoolId!==tx.schoolId))throw Error('School administrator only');
+ Object.keys(tx.features).forEach(id=>{const current=cloud.features&&cloud.features[id]||{},candidate=tx.features[id];if(nfToken(current)!==tx.base[id]&&nfToken(current)!==nfToken(candidate))throw Error('Feature plan changed in the cloud. Pull and retry.');
+ if(tx.kind!=='plan'&&nfToken(current)!==nfToken(candidate)&&(!['countdown','ready'].includes(current.status)||!Number(current.releaseAt)||Number(current.releaseAt)>Date.now()))throw Error('Cloud release is not ready for installation');});
+ const merged=Object.assign({},target,{featureSchemaSeen:1,features:Object.assign({},target.featureSchemaSeen?target.features||{}:nfInheritedMap(target.features),tx.features)});snap.schools=snap.schools.map(s=>s.id===tx.schoolId?merged:s);
+ ['notes','messages','activities'].forEach(k=>{snap[k]=mergeUnionById(tx[k],snap[k]);});return snap;
+}
+async function nfVerifyTransaction(c,tx){try{const r=await cloudFetch(c,'GET');if(!r||!r.ok)return false;const p=await unpackBinRec(await r.json()),s=p&&p.data&&(p.data.schools||[]).find(s=>s.id===tx.schoolId);return !!s&&Object.keys(tx.features).every(id=>nfToken(s.features&&s.features[id])===nfToken(tx.features[id]));}catch(e){return false;}}
+function nfCommit(tx){const s=nfSchoolById(tx.schoolId);if(!s)return;s.features=nfMergeFeatureMaps(tx.features,s.featureSchemaSeen?s.features:nfInheritedMap(s.features));s.featureSchemaSeen=1;['notes','messages','activities'].forEach(k=>DB[k]=mergeUnionById(tx[k],DB[k]));nfRememberReceipt(tx);nfClearIntent(tx.schoolId);saveDB();}
+function nfSchoolListHTML(){const rows=(DB.schools||[]);return `<div class="nf-portal"><div class="nf-topcard"><div><div class="nf-eyebrow">PLATFORM CONTROL</div><h2>School feature management</h2><p>Choose a school. Stage changes. Publish when ready.</p></div><label class="nf-search">🔍<input id="nf-school-query" type="search" placeholder="Search school, code or location…" oninput="A.nfSchoolFilter(this.value)"></label></div><div class="nf-school-grid">${rows.map(s=>`<button class="nf-school-card" data-school-search="${esc((s.name+' '+s.code+' '+s.location).toLowerCase())}" onclick="A.nfOpenSchool('${esc(s.id)}')"><span class="nf-school-logo">${s.logo?`<img src="${esc(s.logo)}" alt="">`:'🏫'}</span><b>${esc(s.name)}</b><span>${esc(s.code||'')} · ${esc(s.location||'')}</span><span>${nfActiveCount(s)} active · ${nfCountdownList(s).length} pending · ${nfReadyList(s).length} ready</span><strong>Manage features →</strong></button>`).join('')||'<div class="card">Register a school to begin.</div>'}</div><div id="nf-school-empty" class="notice info" hidden>No matching schools.</div></div>`;}
+A.nfSchoolFilter=function(q){q=String(q||'').toLowerCase().trim();let n=0;document.querySelectorAll('[data-school-search]').forEach(el=>{el.hidden=!el.dataset.schoolSearch.includes(q);if(!el.hidden)n++;});const empty=$('#nf-school-empty');if(empty)empty.hidden=n>0;};
+A.nfSchoolList=function(){if(NF_SYNC==='syncing')return;NF_SCHOOL=null;NF_DRAFT=new Map();NF_Q='';NF_SYNC='idle';go('features');};
+A.featureOpen=featureOpen;
+
+
+function nfRememberUnverified(tx){try{localStorage.setItem('herems-feature-unverified-'+tx.schoolId,JSON.stringify(tx));}catch(e){} }
+async function nfReconcileUnverified(schoolId){
+ let tx;const key='herems-feature-unverified-'+schoolId;try{tx=JSON.parse(localStorage.getItem(key)||'null');}catch(e){}if(!tx)return false;
+ const u=me();if(!u||u.id!==tx.actorId){toast('Another administrator has an unverified upload on this device. Sign in as that administrator to reconcile it.','bad');return true;}
+ try{const response=await cloudFetch(syncCfg(),'GET');if(!response||!response.ok)throw Error('Cloud unavailable');const record=await unpackBinRec(await response.json()),remote=record&&record.data&&(record.data.schools||[]).find(s=>s.id===schoolId);if(!remote)throw Error('School missing in cloud');
+ const ids=Object.keys(tx.features),matches=ids.every(id=>nfToken(remote.features&&remote.features[id])===nfToken(tx.features[id]));
+ if(matches){tx.confirmed=true;nfCommit(tx);localStorage.removeItem(key);NF_DRAFT=new Map();toast('Previous upload verified. Feature state reconciled.','ok');render();return true;}
+ const unchanged=ids.every(id=>nfToken(remote.features&&remote.features[id]||{})===tx.base[id]);
+ if(unchanged){toast('Previous publication is no longer present, or its outcome is unknown. Your last applied state is preserved. Review the cloud before explicitly discarding this pending intent.','bad');return true;}
+ localStorage.removeItem(key);const school=nfSchoolById(schoolId);if(school)school.features=nfMergeFeatureMaps(remote.features,school.features);NF_DRAFT=new Map();saveDB();toast('The cloud plan has changed. Review its current state and stage your changes again.','bad');render();return true;
+ }catch(e){toast('Earlier upload still unconfirmed. Reconnect and retry to reconcile it.','bad');return true;}
+}
+
+
+function nfJournalIntent(tx){const key='herems-feature-unverified-'+tx.schoolId;const value=JSON.stringify(tx);localStorage.setItem(key,value);if(localStorage.getItem(key)!==value)throw Error('Cannot persist feature transaction intent. Upload cancelled.');}
+function nfClearIntent(id){try{localStorage.removeItem('herems-feature-unverified-'+id);}catch(e){}}
+function nfRememberReceipt(tx){try{localStorage.setItem('herems-feature-receipt-'+tx.schoolId,JSON.stringify({id:tx.id,features:tx.features,verifiedAt:Date.now()}));}catch(e){}}
+function nfPendingIntentHTML(s){let pending=false;try{pending=!!localStorage.getItem('herems-feature-unverified-'+s.id);}catch(e){}return (s.featureSyncWarning?'<div class="notice warn">'+esc(s.featureSyncWarning)+'</div>':'')+(pending?'<div class="notice warn">An earlier publication needs reconciliation. Retry Apply when online. If the cloud was overwritten, review it before discarding the pending intent.<button class="btn ghost sm" onclick="A.nfDiscardIntent(\''+esc(s.id)+'\')">Review / discard pending intent</button></div>':'');}
+A.nfDiscardIntent=function(id){if(!me()||me().role!=='superadmin')return;if(!confirm('Discard the unresolved publication intent? This does not undo any cloud write. Check Cloud Sync first.'))return;nfClearIntent(id);NF_SYNC='idle';render();};
+
+function nfWasManaged(s){if(!s)return false;if(s.featureSchemaSeen)return true;try{return !!localStorage.getItem('herems-feature-receipt-'+s.id);}catch(e){return false;}}
+function nfInheritedMap(map){const base={};featureCatalog().forEach(f=>{base[f.id]={status:'active',revision:0,inherited:true};});return Object.assign(base,map||{});}
+function nfDataWarningHTML(s){if(!s)return '';if(s.featureSyncWarning)return '<div class="notice warn">'+esc(s.featureSyncWarning)+' · Do not publish until reviewed.</div>';if(nfWasManaged(s)&&(!s.features||!Object.keys(s.features).length))return '<div class="notice bad">Feature assignments are missing from a previously managed school. Modules are locked for safety; use Cloud Sync or contact the Super Administrator. Recovery portals remain available.</div>';return '';}
+</script>
+<script>
 /* ================= APP SHELL, ROUTER, GUARDS, DASHBOARD ================= */
 window.A = window.A || {};
 
@@ -10781,7 +11450,8 @@ const NAV = {
   superadmin: [
     {sec:'Platform'},
     {p:'dashboard', t:'Dashboard', i:'📊'},
-    {p:'schools', t:'Register A School', i:'🏫'},   // Round-58: schools are registered HERE by the Super Admin
+    {p:'schools', t:'Register A School', i:'🏫'},
+    {p:'features', t:'Feature Management', i:'⚙️'},   // Round-58: schools are registered HERE by the Super Admin
     {p:'admins', t:'Manage School Admins', i:'🛡'},
     {p:'messages', t:'Messages', i:'✉️'},
     {sec:'Account'},
@@ -10854,6 +11524,112 @@ const NAV = {
     {p:'settings', t:'Settings', i:'⚙️'}
   ]
 };
+
+/* Sidebar portal finder: real, role-scoped routes and sub-portals; normal guards still apply. */
+let PORTAL_SEARCH_Q='', PORTAL_SEARCH_INDEX=-1;
+function portalCatalog(){
+  const u=me(); if(!u) return [];
+  const s=mySchool(), entries=[];
+  let section='';
+  const bases=(NAV[u.role]||[]).filter(n=>n.p&&canAccess(n.p));
+  (NAV[u.role]||[]).forEach(n=>{if(n.sec){section=n.sec;return;} if(canAccess(n.p)) entries.push({id:n.p, page:n.p,title:n.t,path:section,icon:n.i,aliases:[]});});
+  const add=(page,key,title,aliases,apply,anchor)=>{
+    if(!bases.some(n=>n.p===page)||!canAccess(page)) return;
+    const parent=bases.find(n=>n.p===page);
+    entries.push({id:page+':'+key,page,title,path:parent.t+' › '+title,icon:parent.i,aliases:aliases||[],apply,anchor});
+  };
+  add('students','register','Student Register',['register students','directory'],()=>{STU_TAB='register';});
+  add('students','passport','Passport Pics',['photos','student photos'],()=>{STU_TAB='passport';});
+  add('students','passport-pending','Pending Photos',['pending passports'],()=>{STU_TAB='passport';PP_TAB='pending';});
+  add('students','passport-uploaded','Uploaded Photos',[],()=>{STU_TAB='passport';PP_TAB='up';});
+  add('admissions','new','New Enrollment',['enrollment','register student'],()=>{ADM_TAB='new';});
+  add('admissions','gender','Gender Insights',[],()=>{ADM_TAB='gender';});
+  add('archives','stopped','Stopped Students',[],()=>{ARCH_F='stopped';ARCH_Q='';});
+  add('archives','old','Old Students',['graduates','alumni'],()=>{ARCH_F='old';ARCH_Q='';});
+  add('teachers','teach','Teaching Staff',['teachers'],()=>{STAFF_TAB='teach';});
+  add('teachers','nonteach','Non-Teaching Staff',[],()=>{STAFF_TAB='nonteach';});
+  add('subjects','classes','Classes & Streams',['class setup'],null,'cls-card');
+  if(u.role==='schooladmin'&&s){
+    STREAMS_ORDER.forEach(stream=>{
+      add('subjects','class-'+stream,'Classes · '+stream,[stream+' classes'],()=>{CLS_OPEN=stream;},'cls-card');
+      if((s.classes||[]).some(c=>classIsActive(c)&&c.stream===stream))
+        add('subjects','subject-'+stream,'Subject Assignment · '+stream,[stream+' subjects','assign subjects '+stream],()=>{SUBJ_OPEN=stream;},'subject-assignment-card');
+    });
+  }
+  ['entry','perf','sheets'].forEach((view,i)=>add('scores',view,['Score Entry','Performance & Aggregates','Class Score Sheets'][i],i===2?['score sheets','print score sheets']:[],()=>{SC.examType='end';SC.view=view;}));
+  ['class_test','mid','monthly','weekly','end'].forEach((type,i)=>add('scores','exam-'+type,['Class Test','Mid-Term Exam','Monthly Exam','Weekly Test','End of Term Exam'][i],[],()=>{SC.examType=type;SC.view='entry';}));
+  if(canAccess('mocks')) add('scores','mock','Mock Exams',['mocks','mock examination'],()=>{SC.examType='mock';SC.view='entry';});
+  add('attendance','daily','Daily Register',['today attendance'],()=>{AT.view='daily';});
+  add('attendance','grid','Term Totals Grid',['attendance totals'],()=>{AT.view='grid';});
+  [['setup','Term Fee Setup',['fee setup']],['newadm','New Admission Sheet',[]],['pay','Payments & Receipts',['payment','payment and receipts','pay fees','receipt payment']],['rcpt','Receipts Archive',['receipt archive']],['dash','Fees Dashboard',[]],['schol','Scholarship Fees',[]],['struct','Class Structures',[]],['promo','Promotion Fees',[]],['termend','Term-End Bills',['bills']]].forEach(([key,title,aliases])=>add('fees',key,title,aliases,()=>{FE.tab=key;}));
+  if(u.role==='schooladmin') [['overview','Canteen Overview'],['print','Canteen Print Sheets'],['manual','Canteen Manual Totals']].forEach(([key,title])=>add('canteen',key,title,key==='print'?['print canteen sheets']:[],()=>{CT.tab=key;}));
+  add('events','upcoming','Upcoming Events',[],()=>{EV.view='upcoming';});
+  add('events','past','Past Events',[],()=>{EV.view='past';});
+  add('personalise','color','Colour Mood',['themes','color'],()=>{PERS_DD='color';});
+  add('personalise','font','Font Personality',['fonts'],()=>{PERS_DD='font';});
+  [['main','School Profile',0],['about','About Our School',1],['media','Logo · Signature · Template',2],['grades','Grade Boundaries',3]].forEach(([key,title,index])=>add('profile',key,title,[],()=>{PROF_TAB=index;}));
+  if(s&&bases.some(n=>n.p==='schoolabout')) SCHOOL_ABOUT_SECS.filter(x=>String((s.about||{})[x.k]||'').trim()).forEach((x,index)=>add('schoolabout',x.k,x.t.replace(/^[^A-Za-z]+/,''),[],()=>{SAB_SEL=index;}));
+  // Record-specific portals only appear for an already selected, explicitly permitted record.
+  const selectedStudent=(PAGE==='stubord'||PAGE==='studentboard')&&(DB.students||[]).find(st=>st.id===(PARAM||STU_BOARD_ID)&&st.schoolId===u.schoolId);
+  const studentPermitted=selectedStudent&&(u.role==='schooladmin'||(u.role==='teacher'&&teacherScope(u).ids.has(selectedStudent.classId))||(u.role==='parent'&&fullAccess(s)&&!selectedStudent.archived&&selectedStudent.parentPhone===u.phone));
+  if(studentPermitted) [['details','Student Details'],['guardian','Parent & Guardian Details'],['payment','Student Payment History & Arrears'],['academics','Student Academic Progress']].filter(([key])=>key!=='payment'||u.role!=='schooladmin'||cashOK()).forEach(([key,title])=>entries.push({id:'stubord:'+key,page:'stubord',param:selectedStudent.id,title,path:'Student Board › '+title,icon:'🎓',aliases:[],apply:()=>{STU_BOARD_ID=selectedStudent.id;STU_BOARD_TAB=key;}}));
+  const selectedTeacher=u.role==='teacher'?u:(PAGE==='teacherboard'?teacherBoardRecord(PARAM):null);
+  if(selectedTeacher) [['details','Teacher Details'],['assignments','Teacher Classes & Subjects'],['performance','Teacher Subject Performance']].forEach(([key,title])=>entries.push({id:'teacherboard:'+key,page:'teacherboard',param:selectedTeacher.id,title,path:'Teacher Board › '+title,icon:'🧑‍🏫',aliases:[],apply:()=>{TCH_BOARD_TAB=key;}}));
+  const settings=u.role==='superadmin'? [['users','Users'],['sms','SMS Provider'],['smslog','SMS Outbox'],['cloud','JSONBin Cloud'],['plans','Plan Prices'],['security','Security']]
+    :u.role==='schooladmin'? [['users','Users'],['feesettings','Fee Allocation'],['grading','Grading & Report Card'],['security','Security & Cash Password'],['sms','SMS Provider'],['smslog','SMS Outbox'],...(!isLifetime(s)?[['payment','Subscription & Payment']]:[])]
+    :u.role==='parent'? [['account','Account'],['smslog','SMS Notices']]:[['account','Account'],['security','Security']];
+  settings.forEach(([key,title])=>add('settings',key,title,key==='cloud'?['cloud','jsonbin']:[],()=>{SET_TAB=key;}));
+  if(canAccess('sync')) entries.push({id:'sync',page:'sync',title:'Cloud Sync',path:'Updates & Data › Cloud Sync',icon:'☁️',aliases:['sync']});
+  return entries.filter(nfSearchAllowed);
+}
+function portalMatches(query){
+  const q=String(query||'').trim().toLocaleLowerCase();
+  const rank=e=>{
+    if(e.title.toLocaleLowerCase().startsWith(q)) return 0;
+    if(e.aliases.some(a=>a.toLocaleLowerCase().startsWith(q))) return 1;
+    // After the first letter, also accept a phrase within a full breadcrumb.
+    return q.length>1&&e.path.toLocaleLowerCase().includes(q)?2:3;
+  };
+  return portalCatalog().filter(e=>!q||rank(e)<3).sort((a,b)=>rank(a)-rank(b)||a.title.localeCompare(b.title));
+}
+function portalSearchHTML(){
+  return `<div class="portal-finder" id="portal-finder"><button class="portal-search-mini" aria-label="Expand sidebar and search portals" onclick="A.portalSearchExpand()">🔍</button><div class="portal-search-full"><label for="portal-search">Find a portal</label><div class="portal-search-field"><span aria-hidden="true">🔍</span><input id="portal-search" type="search" placeholder="Search portals…" value="${esc(PORTAL_SEARCH_Q)}" autocomplete="off" role="combobox" aria-autocomplete="list" aria-expanded="false" aria-controls="portal-search-results" oninput="A.portalSearch(this.value)" onfocus="A.portalSearch(this.value)" onkeydown="A.portalSearchKey(event)"></div><div id="portal-search-results" role="listbox" aria-label="Matching portals" hidden></div><div id="portal-search-status" class="portal-search-status" role="status" aria-live="polite"></div></div></div>`;
+}
+function paintPortalMatches(){
+  const input=$('#portal-search'),list=$('#portal-search-results'); if(!input||!list) return;
+  const matches=portalMatches(input.value);
+  list.hidden=false; input.setAttribute('aria-expanded','true');
+  if(PORTAL_SEARCH_INDEX>=matches.length) PORTAL_SEARCH_INDEX=-1;
+  list.innerHTML=matches.map((e,i)=>{
+    const locked=(me().role!=='superadmin'&&moduleLocked(e.page))||financePageLocked(e.page);
+    return `<button type="button" class="portal-result ${i===PORTAL_SEARCH_INDEX?'selected':''}" id="portal-option-${i}" role="option" aria-selected="${i===PORTAL_SEARCH_INDEX}" data-portal="${esc(e.id)}" onclick="A.portalSearchOpen(this.dataset.portal)"><span class="portal-result-title">${e.icon} ${esc(e.title)}${locked?' 🔒':''}</span><span class="portal-result-path">${esc(e.path)}</span></button>`;
+  }).join('')||'<div class="portal-no-match">No matching portals for your role.</div>';
+  if(PORTAL_SEARCH_INDEX>=0){input.setAttribute('aria-activedescendant','portal-option-'+PORTAL_SEARCH_INDEX); const active=$('#portal-option-'+PORTAL_SEARCH_INDEX); if(active) active.scrollIntoView({block:'nearest'});}
+  else input.removeAttribute('aria-activedescendant');
+  const status=$('#portal-search-status'); if(status) status.textContent=matches.length+' matching portal'+(matches.length===1?'':'s');
+}
+A.portalSearch=function(q){PORTAL_SEARCH_Q=q;PORTAL_SEARCH_INDEX=-1;paintPortalMatches();};
+A.portalSearchClose=function(){const list=$('#portal-search-results'),input=$('#portal-search');if(list)list.hidden=true;if(input){input.setAttribute('aria-expanded','false');input.removeAttribute('aria-activedescendant');}const status=$('#portal-search-status');if(status)status.textContent='';PORTAL_SEARCH_INDEX=-1;};
+A.portalSearchKey=function(event){
+  const matches=portalMatches(event.target.value);
+  if(event.key==='Escape'){event.preventDefault();event.stopPropagation();A.portalSearchClose();return;}
+  if(event.key==='ArrowDown'||event.key==='ArrowUp'){
+    event.preventDefault();if(!matches.length)return;
+    PORTAL_SEARCH_INDEX=event.key==='ArrowDown'?(PORTAL_SEARCH_INDEX+1)%matches.length:(PORTAL_SEARCH_INDEX<0?matches.length-1:(PORTAL_SEARCH_INDEX-1+matches.length)%matches.length);paintPortalMatches();
+  }else if(event.key==='Enter'){
+    event.preventDefault();const e=matches[PORTAL_SEARCH_INDEX<0?0:PORTAL_SEARCH_INDEX];if(e)A.portalSearchOpen(e.id);
+  }
+};
+A.portalSearchOpen=function(id){
+  const e=portalCatalog().find(e=>e.id===id);if(!e||!canAccess(e.page))return toast('Not available for your role','bad');
+  if(e.apply)e.apply();
+  PORTAL_SEARCH_Q='';PORTAL_SEARCH_INDEX=-1;
+  go(e.page,e.param);
+  if(e.anchor) requestAnimationFrame(()=>{if(PAGE!==e.page||moduleLocked(e.page)||financePageLocked(e.page))return;const el=document.getElementById(e.anchor);if(el)el.scrollIntoView({block:'start',behavior:'smooth'});});
+};
+A.portalSearchExpand=function(){if(document.body.classList.contains('sb-mini'))A.sbMini();const input=$('#portal-search');if(input)input.focus();};
+document.addEventListener('click',event=>{if(!event.target.closest('#portal-finder'))A.portalSearchClose();});
+document.addEventListener('focusin',event=>{if(!event.target.closest('#portal-finder'))A.portalSearchClose();});
 
 let PAGE='dashboard', PARAM=null, NAV_HIST=[];   /* Round-107: NAV_HIST = visited-portal trail → powers the ← back portal */
 function saveNavHist(){
@@ -10935,7 +11711,7 @@ window.addEventListener('beforeunload', function(){ hpScrollSave(true); });
 function boot(){
   if(!me()){ $('#app').classList.add('hidden'); showAuth('login'); return; }
   _initPwStore();   /* Round-351: populate password store for View Secrets */
-  ensurePlatformSms();   /* Round-229: the SMS lane heals on every entry, not only on a page load */
+  ensurePlatformSms(); try{ nfCaptureIp(); }catch(e){}   /* Round-229: the SMS lane heals on every entry */
   stopAuthClock(); initTooltips(); enforceSchoolStatuses();
   $('#auth-root').classList.add('hidden');
   $('#app').classList.remove('hidden');
@@ -11033,8 +11809,21 @@ A.sabPick=function(i){   /* Round-187: tap a section tile → its colour floods 
   try{ emojiize(p); }catch(e){}
   try{ const t=document.querySelector('#sab-x-tint'); if(t) t.style.background='linear-gradient(180deg,'+x.c+'26,'+x.c+'0d 55%,transparent)'; }catch(e){} };
 A.sabEdit=function(){ PROF_TAB=1; go('profile'); };   /* Round-187: straight to the 📖 About Our School editor card on the School Profile */
+function featureBlocked(p){
+ const u=me();if(!u||u.role==='superadmin')return false;
+ const sch=nfSchoolForUser(u);
+ if(sch&&schoolLocked(sch)&&LOCK_FEATS.includes(p))return true;
+ if(!nfEnforced(u))return false;
+ if(String(p).startsWith('nf-lock:'))return true;
+ const own=nfPageFeature(p);if(own&&!nfCore(own.id)&&!featureActive(sch,own.id))return true;
+ if(p==='canteenprint'&&!nfSubAllowed('canteen','print'))return true;
+ if(p==='passport'&&!nfSubAllowed('students','passport'))return true;
+ return false;
+}
 function canAccess(p){
   const u=me(); if(!u) return false;
+  if(featureBlocked(p)) return false;
+  if(p==='features') return u.role==='superadmin';
   if(p==='stubord' || p==='studentboard') return true;
   if(p==='teacherboard') return ['schooladmin','teacher','superadmin'].includes(u.role);
   /* Round-201: 'schoolabout' fused into the School Admin's 🏫 Profile portal (removed from their sidebar),
@@ -11058,8 +11847,25 @@ function _applyPageNav(p, param){
   if(sb) sb.classList.remove('open');
 }
 
+function featureRoleAllowed(p){
+ const u=me();if(!u)return false;
+ if(p==='features')return u.role==='superadmin';
+ if((NAV[u.role]||[]).some(n=>n.p===p))return true;
+ if(['stubord','studentboard'].includes(p))return true;
+ if(p==='teacherboard')return ['schooladmin','teacher','superadmin'].includes(u.role);
+ if(['mocks','canteenprint','canteenmanual','schoolabout','passport','directory','genderana'].includes(p)&&u.role==='schooladmin')return true;
+ if(p==='mocks'&&u.role==='teacher')return !!(mySchool()&&teacherTaughtMock(u,mySchool()));
+ if(p==='sync')return ['superadmin','schooladmin','teacher'].includes(u.role);
+ return false;
+}
+function featureLockNotice(p){
+ if(!featureRoleAllowed(p))return false;const u=me();if(!nfEnforced(u))return false;
+ const f=nfPageFeature(p),sch=nfSchoolForUser(u);if(f&&['countdown','ready'].includes(featureState(sch,f.id))){A.nfSchoolFeatureInfo(f.id);return true;}return false;
+}
 function go(p, param, fromBack){
+  if(featureLockNotice(p)) return;
   if(!canAccess(p)) return toast('Not available for your role','bad');
+  if(featureLockNotice(p)) return;
   if(!fromBack){
     try{
       const top = NAV_HIST[NAV_HIST.length - 1];
@@ -11346,8 +12152,11 @@ function renderShell(){
   const s=mySchool();
   const _navOld=$('#nav'); const _navTop=_navOld?(_navOld.scrollTop||0):0;   // keep sidebar scroll position across page switches
   const _groups=[]; let _grp=null;
-  (NAV[u.role]||[]).forEach(n=>{ if(n.sec){ _grp={sec:n.sec,kids:[]}; _groups.push(_grp); } else { if(!_grp){ _grp={sec:null,kids:[]}; _groups.push(_grp); } _grp.kids.push(n); } });
+  nfNavRows(u).forEach(n=>{ if(n.sec){ _grp={sec:n.sec,kids:[]}; _groups.push(_grp); } else { if(!_grp){ _grp={sec:null,kids:[]}; _groups.push(_grp); } _grp.kids.push(n); } });
+  nfStartTick();
   const kidHTML=function(n){
+    if(n.lock) return `<div class="ni nf-lockrow ${(PAGE==='features'&&PARAM===n.feat)?'on':''}" data-tip="${esc(n.tip||'Scheduled for deployment')}" onclick="${n.on}">
+      <span>${n.i}</span><span>${esc(n.t)}</span><span class="lk" title="${n.lock==='ready'?'Ready for installation':'Pending deployment'}">🔒</span></div>`;
     if(n.p==='canteen' && u.role==='teacher' && s && s.use_app_for_canteen===false) return '';
     /* Round-308 (owner: "current master copy features not showing"): the Mock Exams portal had lost its
        ONLY door — this line hid "📝 Mock Exams · Basic 9" from the School Administrator's sidebar, so the
@@ -11363,7 +12172,7 @@ function renderShell(){
     if(n.p==='teachers'&&u.role==='schooladmin'){ const c4=newTeacherRegs(u.schoolId).length; if(c4) badge+=`<span class="nav-badge" data-tip="New teacher registrations waiting for your review">🆕${c4}</span>`; }   /* Round-145 */
     if(n.p==='ptac'){ const c3=unreadPTACount(u); if(c3) badge+=`<span class="nav-badge" data-tip="Unread PTA announcements / messages">👑${c3}</span>`; }   /* Round-128 */
     const navTitle = (n.p==='canteen' && u.role==='schooladmin' && s && s.use_app_for_canteen===false) ? 'Canteen (Print Sheets)' : n.t;
-    return `<div class="ni ${(PAGE===n.p||(PAGE==='canteenprint'&&n.p==='canteen')||(PAGE==='canteenmanual'&&n.p==='canteen'))?'on':''}" data-tip="${esc(navTitle)}" onclick="go('${n.p}')">   <!-- Round-238: hover names (vital in the mini rail) -->
+    return `<div class="ni ${(PAGE===n.p||nfRowOn(n)||(PAGE==='canteenprint'&&n.p==='canteen')||(PAGE==='canteenmanual'&&n.p==='canteen'))?'on':''}" data-tip="${esc(navTitle)}" onclick="${n.on? n.on : ('go(\''+n.p+'\')')}">   <!-- Round-238: hover names (vital in the mini rail) -->
       <span>${(n.p==='debt'||n.p==='mydebt')?debtIco():((window.HPS_CHROME&&HPS_CHROME()==='emoji')? n.i : (window.NAV_IC&&NAV_IC[n.p]? ic(NAV_IC[n.p],'ic-20') : n.i))}</span><span>${navTitle}</span>${badge}   <!-- Round-248 (owner): Debt Tracking + My Debtors wear the official DEBT picture -->
       ${locked?'<span class="lk">🔒</span>':(cashLock?'<span class="lk">🔑</span>':'')}</div>`;
   };
@@ -11392,7 +12201,7 @@ function renderShell(){
       <b style="line-height:1.2;font-size:.92rem;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${_hasSchLogo ? esc(s.name) : 'HEREMS<span>_PLUS</span>'}</b>
     </div>
     <div class="s-navmode"><button class="pnm ${NAV_TREE?'':'on'}" data-tip="Classic scrollable list" onclick="A.navModeSet('list')">${ic('list','ic-16')} List</button><button class="pnm ${NAV_TREE?'on':''}" data-tip="Tree view — fold/unfold each section" onclick="A.navModeSet('tree')">${ic('tree','ic-16')} Tree</button><button class="pnm sb-mini-btn" id="sb-mini-btn" data-tip="${document.body.classList.contains('sb-mini')?'Expand the sidebar to full view':'Collapse the sidebar to icons only'}" onclick="A.sbMini()">${document.body.classList.contains('sb-mini')? ic('expand','ic-16')+' Expand' : ic('collapse','ic-16')+' Collapse'}</button></div>   <!-- Round-125: list ⇄ tree switch · Round-238 (owner): ⏮ collapsible sidebar -- desktop mini rail -->
-    <div id="nav" class="${NAV_TREE?'tree':''}">${nav}<div class="nf-zone" aria-hidden="true"><div class="nav-fill" aria-hidden="true"><img class="logo" src="${s&&s.logo?s.logo:APP_LOGO_URI}" alt=""></div><div class="nf-name">HEREMS<span style="color:rgba(217,119,6,.9)">_PLUS</span></div><div class="nf-sub">${s&&s.name?esc(s.name):'School Management &amp; Results'}${s&&(s.info||s.motto)?' · '+esc(s.info||s.motto):''}</div>   <!-- Round-146: the SCHOOL MOTTO lives here now (filler text retired) --></div></div>   <!-- Round-108/109: watermark crest (PINNED, untouched) · Round-132: rows STRETCH to fill + the tail becomes a true brand zone -->
+    <div id="nav" class="${NAV_TREE?'tree':''}">${portalSearchHTML()}${nav}<div class="nf-zone" aria-hidden="true"><div class="nav-fill" aria-hidden="true"><img class="logo" src="${s&&s.logo?s.logo:APP_LOGO_URI}" alt=""></div><div class="nf-name">HEREMS<span style="color:rgba(217,119,6,.9)">_PLUS</span></div><div class="nf-sub">${s&&s.name?esc(s.name):'School Management &amp; Results'}${s&&(s.info||s.motto)?' · '+esc(s.info||s.motto):''}</div>   <!-- Round-146: the SCHOOL MOTTO lives here now (filler text retired) --></div></div>   <!-- Round-108/109: watermark crest (PINNED, untouched) · Round-132: rows STRETCH to fill + the tail becomes a true brand zone -->
     <div class="s-foot">
       <div class="b" style="color:#fff">${avatarIcon(u)} ${esc(u.name)}</div>   <!-- Round-51: role icon (👑 Super Admin · 🏫 School Admin · 👨‍🏫/👩‍🏫 Teacher · 👪 Parent) -->
       <div>${roleLabel(u.role)}${s?' · '+esc(s.name):''}</div>
@@ -11470,8 +12279,9 @@ function pageIcon(p){ p=p||PAGE; if(p==='debt'||p==='mydebt') return debtIco(); 
     return im? ic(im,'ic-24') : (n&&n.i? n.i : '✨️'); }catch(e){ return '✨️'; } }
 function pageTitle(p){
   const map={dashboard:'Dashboard',schools:'Schools',sync:'Sync',settings:'Settings',updates:'Updates & Maintenance',
-    profile:'School Profile',teacherboard:'Teacher Board',stubord:'Student Board',studentboard:'Student Board',
+    profile:'School Profile',features:'Feature Management',teacherboard:'Teacher Board',stubord:'Student Board',studentboard:'Student Board',
     students:'Students',passport:'Upload Student Passport Pictures',directory:'Student Directory',archives:'Archives',teachers:'Staff — Teaching & Non-Teaching',subjects:'Subjects · NaCCA',promote:'Promote Students · Promotion',admins:'Manage School Admins & Password Resets',scores:'Scores, Conversion & Performance',
+    features:'Feature Management — modules, releases & audit',
     attendance:'Attendance & Terms',comments:'Terminal Comments',houses:'Houses',prefects:'Prefects Board',
     committees:'Teacher Committees',pta:'PTA Register',ptac:'PTA Committee · Board, Meetings & Parent Messages',events:'School Events',messages:'Messages · Communication Center',termset:'Academic Settings',fees:'Fees & Receipts',debt:'Debt Tracking',mydebt:'My Debtors',canteen:'Canteen Fees — Monthly & Termly',salaries:'Staff Salaries',audit:'Audit & Accountability',
     expenditure:'Expenditure & Cash Flow',reports:'Terminal Reports',myclasses:'My Classes',    children:'My Children',schoolabout:'About the School — Our Story · Mission · Vision',personalise:'Personalise Appearance',admissions:'Admissions — New Enrollment',genderana:'Gender Insights — Boys & Girls by Stream'};
@@ -11733,8 +12543,10 @@ function render(){
     }
     return showAuth('login');
   }
+  if(!canAccess(PAGE)){const f=nfPageFeature(PAGE),sch=nfSchoolForUser(me());paintContent(c,false,f&&sch&&['countdown','ready'].includes(featureState(sch,f.id))?nfLockedNoticeHTML(f,sch):'<div class="card notice warn">This portal is not available for your school or role.</div>');return;}
+  const subLock=nfGuardSub(PAGE);if(subLock){paintContent(c,false,subLock);return;}
   const _anim=!!window.__hpNavAnim; window.__hpNavAnim=false;   /* Round-97 */
-  const R={dashboard:renderDashboard, schools:renderSchools, sync:renderSync, settings:renderSettings, profile:schoolProfileHTML, schoolabout:schoolAboutHTML, updates:renderUpdates,
+  const R={dashboard:renderDashboard, schools:renderSchools, features:renderFeatures, sync:renderSync, settings:renderSettings, profile:schoolProfileHTML, schoolabout:schoolAboutHTML, updates:renderUpdates,
     students:renderStudents, admissions:renderAdmissions, genderana:renderGender, directory:renderDirectory, archives:renderArchives, teachers:renderTeachers, teacherboard:renderTeacherBoard, subjects:renderSubjects, scores:renderScores,
     promote:renderPromote, admins:renderAdmins,
     passport:renderPassportPics,
@@ -11743,7 +12555,12 @@ function render(){
     committees:renderCommittees, pta:renderPTA, ptac:renderPTACommittee, fees:renderFees, debt:renderDebt, mydebt:renderMyDebt, canteen:renderCanteen, canteenprint:function(){ CT.tab='print'; return renderCanteen(); }, canteenmanual:function(){ CT.tab='manual'; return renderCanteen(); }, salaries:renderSalaries, expenditure:renderExpenditure, audit:renderAudit,
     reports:renderReports, mocks:renderMocks, myclasses:renderMyClasses, children:renderChildren, personalise:renderPersonalise, stubord:renderStudentBoard, studentboard:renderStudentBoard};
   // freemium gate
-  if(me().role!=='superadmin' && moduleLocked(PAGE)){ paintContent(c,_anim,lockScreenHTML(PAGE)); return; }
+  if(moduleLocked(PAGE)){ paintContent(c,_anim,lockScreenHTML(PAGE)); return; }
+  /* R220: a module still in its release countdown (or waiting to be installed) paints the LOCKED screen —
+     never its contents. Off features never reach here: the guard already refused them. */
+  try{ const _u=me(); if(_u&&_u.role!=='superadmin'){ const _s=nfSchoolForUser(_u);
+    if(_s){ const _f=nfPageFeature(PAGE); const _st=_f? featureState(_s,_f.id):'off';
+      if(_f&&(_st==='countdown'||_st==='ready')){ paintContent(c,_anim,nfLockedNoticeHTML(_f,_s)); return; } } } }catch(e){}
   // R220: all Finance pages, including Fees and Debt, are locked for school admins by default.
   if(financePageLocked(PAGE)){
     paintContent(c,_anim,cashLockHTML(PAGE)); return;
@@ -11760,7 +12577,7 @@ function render(){
         <button class="btn sm ghost" onclick="render()">Reload View</button>
       </div></div>`;
   }
-  paintContent(c,_anim,pageContent);
+  paintContent(c,_anim,nfMaskTabs(pageContent));
   try{ scheduleStudentNewExpiry(); }catch(e){}
   try {
     const after={scores:afterRenderScores, reports:afterRenderReports, fees:afterRenderFees, stubord:afterRenderStudentBoard, studentboard:afterRenderStudentBoard,
@@ -11781,9 +12598,23 @@ function lockScreenHTML(page){
     <div class="mt2 flex"><button class="btn gold" onclick="go('settings')">💳 View payment options</button>
     <button class="btn ghost" onclick="go('dashboard')">Back to dashboard</button></div></div>`;
 }
+const FEATURE_MGMT_PAGES=['features'];
 const FINANCE_PAGES=['fees','debt','canteen','canteenprint','canteenmanual','salaries','expenditure','audit'];
 function financePageLocked(page){
   const u=me(); return !!(u&&u.role==='schooladmin'&&FINANCE_PAGES.includes(page)&&!cashOK());
+}
+function nfLockedNoticeBody(sch,f){
+  const t=nfFmtRemain(nfRemaining(sch,f.id));
+  const st=featureState(sch,f.id);
+  return `<div class="nf-lock-ico">🔒</div>
+    <h3 class="mt1">FEATURE LOCKED</h3>
+    <p class="mut mt1" style="max-width:460px"><b>${esc(f.name)}</b> — this feature has been scheduled for deployment by your System Administrator.</p>
+    <div class="nf-lock-timer">Release countdown: <b data-nf-text="${esc(f.id)}">${st==='ready'?'Ready now':t.text}</b></div>
+    <p class="mut small" style="max-width:460px">This feature will become available after deployment and update synchronization.</p>
+    <div class="mt2 flex" style="gap:.5rem;flex-wrap:wrap">${st==='ready'&&me()&&me().role==='schooladmin'
+      ? `<button class="btn gold" onclick="A.closeModal();A.nfInstall('${esc(f.id)}')">⚡ Install Update Now</button>`
+      : `<button class="btn gold" onclick="A.nfNotifyMe('${esc(f.id)}')">🔔 Notify Me When Available</button>`}
+      <button class="btn ghost" onclick="A.closeModal();go('dashboard')">Back to dashboard</button></div>`;
 }
 function cashLockHTML(page){
   return `<div class="card lockwrap"><div class="lk-ic">🔑</div>
@@ -11951,42 +12782,56 @@ A.setZoom =function(v){ me().prefs=me().prefs||{}; const z=Math.min(140,Math.max
 A.resetPrefs=function(){ me().prefs={}; saveDB(); applyPrefs(); render(); toast('Appearance reset to defaults','ok'); };
 
 /* ---------- SVG CHARTS (no external libs) ---------- */
+function chartStepScale(values,step,padding){
+  const peak=values.reduce((m,v)=>Number.isFinite(Number(v))?Math.max(m,Number(v)):m,0);
+  const intervals=Math.max(4,Math.ceil(peak*padding/step));
+  // Exact requested increments, with scrolling instead of overlapping labels on large cohorts.
+  return {step,intervals,max:intervals*step,height:Math.max(240,84+intervals*28)};
+}
 function lineChartSVG(points, opts){
-  opts=opts||{}; const W=720,H=240,P=42;
+  opts=opts||{}; const W=720,P=42;
+  const stepped=Number.isFinite(Number(opts.tickStep))&&Number(opts.tickStep)>0;
+  const scale=stepped?chartStepScale(points.map(p=>p.value),Number(opts.tickStep),1.12):null;
+  const H=scale?scale.height:240;
   const AX=58;               /* Round-202: wider left gutter for the Y-axis number labels */
   const IN=34;               /* Round-202: inner inset so the first/last points never sit ON the axis (labels used to merge into the grid numbers) */
-  const vals=points.map(p=>p.value); const max=Math.max(10,...vals)*1.12, min=0;
+  const vals=points.map(p=>p.value); const max=scale?scale.max:Math.max(10,...vals)*1.12, min=0;
   const L=AX+IN, R=W-P-IN;   /* plot area for the data points */
   const X=i=> points.length===1? (L+R)/2 : L+(R-L)*i/(points.length-1);
   const Y=v=> H-P-(H-2*P)*(v-min)/(max-min);
-  let grid=''; for(let g=0;g<=4;g++){ const v=min+(max-min)*g/4, y=Y(v);
+  const intervals=scale?scale.intervals:4;
+  let grid=''; for(let g=0;g<=intervals;g++){ const v=scale?g*scale.step:min+(max-min)*g/4, y=Y(v);
     grid+=`<line x1="${AX}" y1="${y}" x2="${W-P}" y2="${y}" stroke="#ccd4e6" stroke-width="1.2"/>
     <text x="${AX-8}" y="${y+4.5}" font-size="12.5" font-weight="600" fill="#3a4360" text-anchor="end">${r1(v)}</text>`; }
   const pts=points.map((p,i)=>`${X(i)},${Y(p.value)}`).join(' ');
-  return `<svg viewBox="0 0 ${W} ${H}" class="chart" role="img">${grid}
+  return `${scale?'<div class="chart-stepped-scroll" tabindex="0" aria-label="Grade trend chart; scroll to view the full scale">':''}<svg viewBox="0 0 ${W} ${H}" class="chart" role="img">${grid}
     <polyline points="${pts}" fill="none" stroke="${opts.color||'#4f46e5'}" stroke-width="3.2" stroke-linejoin="round" stroke-linecap="round"/>
     ${points.map((p,i)=>`<circle cx="${X(i)}" cy="${Y(p.value)}" r="5.6" fill="#fff" stroke="#f5a623" stroke-width="3" ${p.onclick?`onclick="${p.onclick}" style="cursor:pointer"`:''}><title>${esc(p.label)}: ${p.value}${p.onclick?' — tap for details':''}</title></circle>
       <text x="${X(i)}" y="${Y(p.value)-12}" font-size="14" text-anchor="middle" fill="#141a2e" font-weight="800">${p.value}</text>
       <text x="${X(i)}" y="${H-P+20}" font-size="12.5" text-anchor="middle" fill="#3a4360" font-weight="600">${esc(p.label)}</text>`).join('')}
-  </svg>`;
+  </svg>${scale?'</div>':''}`;
 }
 function barChartSVG(data, opts){
-  opts=opts||{}; const W=720,H=230,P=42;
+  opts=opts||{}; const W=720,P=42;
   const fixedMax=Number(opts.maxValue);
   const fixed=Number.isFinite(fixedMax)&&fixedMax>0;
   if(fixed) data=data.map(d=>{const n=Number(d.value);return Object.assign({},d,{value:Number.isFinite(n)?Math.max(0,Math.min(fixedMax,n)):0,disp:undefined});});
-  const max=fixed?fixedMax:Math.max(1,...data.map(d=>d.value))*1.15;
+  const stepped=!fixed&&Number.isFinite(Number(opts.tickStep))&&Number(opts.tickStep)>0;
+  const scale=stepped?chartStepScale(data.map(d=>d.value),Number(opts.tickStep),1.15):null;
+  const H=scale?scale.height:230;
+  const max=fixed?fixedMax:(scale?scale.max:Math.max(1,...data.map(d=>d.value))*1.15);
   const bw=(W-2*P)/Math.max(1,data.length);
-  let grid=''; for(let g=0;g<=4;g++){ const v=max*g/4, y=H-P-(H-2*P)*g/4;
+  const intervals=scale?scale.intervals:4;
+  let grid=''; for(let g=0;g<=intervals;g++){ const v=scale?g*scale.step:max*g/4, y=H-P-(H-2*P)*g/intervals;
     grid+=`<line x1="${P}" y1="${y}" x2="${W-P}" y2="${y}" stroke="#ccd4e6" stroke-width="1.2"/><text x="${P-6}" y="${y+4.5}" font-size="12.5" font-weight="600" fill="#3a4360" text-anchor="end">${opts.money?'':r1(v)}</text>`; }
-  return `<svg viewBox="0 0 ${W} ${H}" class="chart">${grid}
+  return `${scale?'<div class="chart-stepped-scroll" tabindex="0" aria-label="Enrollment by stream chart; scroll to view the full scale">':''}<svg viewBox="0 0 ${W} ${H}" class="chart">${grid}
     ${data.map((d,i)=>{ const h=(H-2*P)*d.value/max, x=P+i*bw+bw*0.18, y=H-P-h;
       const lbl = String(d.label).length>9? String(d.label).slice(0,8)+'…' : d.label;
       return `<rect x="${x}" y="${y}" width="${bw*0.64}" height="${h}" rx="5" fill="${d.color||opts.color||'#4f46e5'}" ${d.onclick?`onclick="${d.onclick}" style="cursor:pointer"`:''}>
         <title>${esc(d.label)}: ${d.disp!=null?d.disp:d.value}${d.onclick?' — tap for details':''}</title></rect>
       <text x="${x+bw*0.32}" y="${y-7}" font-size="13.5" text-anchor="middle" fill="#141a2e" font-weight="800">${d.disp!=null?d.disp:d.value}</text>
       <text x="${x+bw*0.32}" y="${H-P+19}" font-size="12.5" text-anchor="middle" fill="#3a4360" font-weight="600">${esc(lbl)}</text>`; }).join('')}
-  </svg>`;
+  </svg>${scale?'</div>':''}`;
 }
 
 /* ---------- SMART GREETING BANNER (admin & teacher) ---------- */
@@ -12022,7 +12867,7 @@ function renderDashboard(){
 function dashSuper(){
   const recentNotes=DB.notes.slice().reverse().slice(0,6);
   const regSchools=DB.schools.slice().sort((a,b)=>(b.createdAt||0)-(a.createdAt||0)).slice(0,5);   // Round-53: newest first
-  return `
+  return `${nfSuperWidgetHTML()}
   <div class="card mb2"><h3>🆕 New school registrations <span class="badge info">${DB.schools.length} school${DB.schools.length===1?'':'s'} total</span></h3>
     <div class="small mut mb1">Schools you register land here PENDING — the moment a school admin redeems their joining code, full details arrive (nothing lost offline in between).</div>
     ${regSchools.length? regSchools.map(sc=>{ const adm=DB.users.find(x=>x.schoolId===sc.id&&x.role==='schooladmin');
@@ -12177,6 +13022,7 @@ function dashAdmin(){
     </div>`;
   }
   const studs=activeStudents(s.id), tchs=teachersOf(s.id);
+  nfStartTick();   /* R220: the release countdown ticks every second while a school admin is signed in */
   const feesCollected=DB.payments.filter(p=>p.schoolId===s.id&&p.year===year).reduce((a,p)=>a+money(p.amount),0);
   const exps=DB.expenditure.filter(e=>e.schoolId===s.id&&financeYearMatches(e,year)).reduce((a,e)=>a+money(e.amount),0);
   const locked=moduleLocked('fees');
@@ -12193,7 +13039,7 @@ function dashAdmin(){
   const byStream=STREAMS_ORDER.map(st=>({label:st, value:studs.filter(x=>{const c=classOf(s,x.classId);return c&&c.stream===st;}).length, onclick:"A.streamTap('"+st+"')"}));
   const recent=(DASH_Q? studs.filter(st=>stuMatch(st,classOf(s,st.classId),DASH_Q)).slice(0,15) : studs.slice(0,6));   /* Round-60: live-filtered A→Z preview */
   const owingRows=debtorsRows(s,year), owingTotal=money(owingRows.reduce((a,r)=>a+(r.d&&r.d.total||0),0));
-  return `
+  return `${nfDataWarningHTML(s)}${featureNotificationHTML(s)}
   ${greetBannerHTML(me())}${statusBannerHTML(s)}${subscriptionRenewalAlertHTML(s)}${termFrameAlertHTML(me())}${pictureAlertHTML(me())}${newTeacherAlertHTML()}${newStudentAlertHTML(s)}${adminMissingCtSigAlertHTML(s)}   <!-- Round-145: self-registered teachers report for review here -->
   ${dashSearchBarHTML()}   <!-- Round-60: dashboard search bar at the very top -->
   <div class="grid g4">
@@ -12205,11 +13051,11 @@ function dashAdmin(){
   </div>
   <div class="grid g2 mt3">
     <div class="card"><h3>📈 Grade trend across terms <span class="badge info">converted totals · avg per student</span></h3>
-      ${trend.some(p=>p.value>0)? lineChartSVG(trend) : emptyMini('No scores yet — enter scores to see trends.')}
+      ${trend.some(p=>p.value>0)? lineChartSVG(trend,{tickStep:200}) : emptyMini('No scores yet — enter scores to see trends.')}
       <div class="small mut center">Average of each student's aggregate (sum of converted subject marks) per term, ${year}. <b>Tap any point for the class breakdown.</b></div>
     </div>
     <div class="card"><h3>🏫 Enrollment by stream</h3>
-      ${byStream.some(b=>b.value>0)? barChartSVG(byStream) : emptyMini('No students yet.')}
+      ${byStream.some(b=>b.value>0)? barChartSVG(byStream,{tickStep:5}) : emptyMini('No students yet.')}
       ${byStream.some(b=>b.value>0)? '<div class="small mut center mt1">Tap any bar — the breakdown opens as a graph.</div>' : ''}
     </div>
   </div>
@@ -12389,7 +13235,7 @@ window.A = window.A || {};
 let STU_Q='', STU_STREAM='', STU_SEX='', GEN_SEX='';   /* Round-188: gender-insights drill feeds the register filters */
 let STU_TAB='register';   /* Round-200: Students portal tabs — 'register' | 'passport' | 'gender' (Passport Pics + Gender Insights fused in from the sidebar) */
 /* Round-200: jump to a Students tab from anywhere (dashboard stat, picture alerts) — navigates to the Students portal and opens the tab */
-A.stuTab=function(tab){ STU_TAB=tab||'register'; if(PAGE!=='students'){ go('students'); } else { render(); } };
+A.stuTab=function(tab){ if(!nfRequireSub('students',tab||'register'))return; STU_TAB=tab||'register'; if(PAGE!=='students'){ go('students'); } else { render(); } };
 
 /* ==================== ROUND-187 c: 🆕 NEW ENROLLMENT — new admissions, collected & COUNTED on the register page ====================
    Every registration/import now stamps st.enroll ('NEW' new admission · 'RET' returning · 'TRF' transfer).
@@ -12603,6 +13449,7 @@ A.nacClassList=function(clsId){
 
 /* Round-200: Students is now a TABBED portal — 🎓 Register · 📷 Passport Pics · ⚧️ Gender Insights (the last two moved in from the sidebar) */
 function renderStudents(){
+  if(featureBlocked('students'))return '<div class="notice warn">Feature disabled for this school.</div>';const nfGate=nfGuardSub('students');if(nfGate)return nfGate;
   const s=mySchool(); if(!s) return '';
   const pend=pendingPictures(s, null).length;
   const tabs=[
@@ -12615,6 +13462,18 @@ function renderStudents(){
   if(STU_TAB==='passport') body=renderPassportPics();
   else body=renderStudentsRegister();
   return bar+body;
+}
+/* Shared student identity/layout: active register and Archives stay visually identical. */
+function studentRegisterCellsHTML(s,st){
+  const c=classOf(s,st.classId), h=(s.houses||[]).find(h=>h.id===st.houseId);
+  return `    <td><a href="#" aria-label="Open student portal" onclick="A.viewStudent('${st.id}');return false">${st.photo?`<img class="avatar" src="${st.photo}">`:`<span class="av-fallback">${esc(((st.firstName||'?')[0]||'?')+((st.surname||'')[0]||''))}</span>`}</a></td>
+    <td class="small b student-id-cell"><a href="#" onclick="A.viewStudent('${st.id}');return false">${esc(st.sid)}</a></td>
+    <td class="student-name-cell"><a class="student-name-link" href="#" onclick="A.viewStudent('${st.id}');return false">${esc([st.firstName,st.surname].filter(Boolean).join(' ')||st.name||'—')}</a>${st.twinMark?' <span class="badge gold" data-tip="👯 Twin — the Junior/Senior mark keeps this twin apart from the sibling record">👯 '+esc(st.twinMark)+'</span>':''}${st.protocol?' <span class="badge gold" data-tip="🏅 Protocol student — exempt from standard class fees; owes only the admin-set protocol fees">🏅 PROTOCOL</span>':''}${st.enroll==='SPO'?' <span class="badge gold" data-tip="🤝 Sponsored (scholarship) student — pays only the admin-set fees">🤝 SPONSORED</span>':''}${(st.needsInfo||missingStuInfo(st).length)?' <span class="badge warn" data-tip="Incomplete details — imported with missing info. ✏️ Edit to complete">⚠️ incomplete</span>':''}${isStudentNew(st)?' <span class="badge ok" data-new-student="'+esc(st.id)+'" data-tip="Newly registered student — visible for 48 hours">NEW</span>':''}   <!-- Round-108: age wears its own 🎂 Age column now · Round-187: 🆕 NEW admissions wear a green badge --></td>
+    <td>${st.gender==='M'?'Male':'Female'}</td><td class="age-col">${ageChip(st,true)}</td><td class="student-class-cell">${c?clsTag(c):'—'}${c&&c.stream?` <span class="small mut student-stream">${esc(c.stream)}</span>`:''}</td>
+    <td>${pupilShowsHouse(s,st)&&h?`<span class="house-dot" style="background:${h.color}"></span> ${esc(h.name)}`:'—'}</td>
+    <td class="small">${esc(st.residence||'—')}</td>
+    <td class="small">${esc(st.relationship||'')} · ${phShow(st.parentPhone)}</td>
+`;
 }
 function renderStudentsRegister(){
   const s=mySchool(); const q=STU_Q.toLowerCase();
@@ -12651,15 +13510,9 @@ function renderStudentsRegister(){
   ${!photoOK?'<div class="notice warn mini mb2">📷 Photo upload is locked in limited mode (available during grace / after payment).</div>':''}
   ${newEnrollCardHTML(s)}   <!-- Round-187: 🆕 New Enrollment (new admissions) lives INSIDE the register-students portal · Round-212 (owner): the Live New Admissions Count card REMOVED from this portal — it lives on the 🆕 Admissions portal -->
   <div class="table-wrap students-register-wrap"><table class="students-register-table"><thead><tr><th></th><th><span class="student-heading">🆔 School ID</span></th><th><span class="student-heading">👤 Name</span></th><th><span class="student-heading">⚧️ Gender</span></th><th class="age-col"><span class="student-heading">🎂 Age</span></th><th><span class="student-heading">🏫 Class / Stream</span></th><th><span class="student-heading">🏠 House</span></th><th><span class="student-heading">📍 Residence</span></th><th><span class="student-heading">📞 Guardian</span></th><th><span class="student-heading">⚙️ Actions</span></th></tr></thead><tbody>
-  ${list.map(st=>{const c=classOf(s,st.classId); const h=(s.houses||[]).find(x=>x.id===st.houseId);
+  ${list.map(st=>{
     return `<tr>
-    <td><a href="#" aria-label="Open student portal" onclick="A.viewStudent('${st.id}');return false">${st.photo?`<img class="avatar" src="${st.photo}">`:`<span class="av-fallback">${esc(((st.firstName||'?')[0]||'?')+((st.surname||'')[0]||''))}</span>`}</a></td>
-    <td class="small b student-id-cell"><a href="#" onclick="A.viewStudent('${st.id}');return false">${esc(st.sid)}</a></td>
-    <td class="student-name-cell"><a class="student-name-link" href="#" onclick="A.viewStudent('${st.id}');return false">${esc([st.firstName,st.surname].filter(Boolean).join(' ')||st.name||'—')}</a>${st.twinMark?' <span class="badge gold" data-tip="👯 Twin — the Junior/Senior mark keeps this twin apart from the sibling record">👯 '+esc(st.twinMark)+'</span>':''}${st.protocol?' <span class="badge gold" data-tip="🏅 Protocol student — exempt from standard class fees; owes only the admin-set protocol fees">🏅 PROTOCOL</span>':''}${st.enroll==='SPO'?' <span class="badge gold" data-tip="🤝 Sponsored (scholarship) student — pays only the admin-set fees">🤝 SPONSORED</span>':''}${(st.needsInfo||missingStuInfo(st).length)?' <span class="badge warn" data-tip="Incomplete details — imported with missing info. ✏️ Edit to complete">⚠️ incomplete</span>':''}${isStudentNew(st)?' <span class="badge ok" data-new-student="'+esc(st.id)+'" data-tip="Newly registered student — visible for 48 hours">NEW</span>':''}   <!-- Round-108: age wears its own 🎂 Age column now · Round-187: 🆕 NEW admissions wear a green badge --></td>
-    <td>${st.gender==='M'?'Male':'Female'}</td><td class="age-col">${ageChip(st,true)}</td><td class="student-class-cell">${c?clsTag(c):'—'}${c&&c.stream?` <span class="small mut student-stream">${esc(c.stream)}</span>`:''}</td>
-    <td>${pupilShowsHouse(s,st)&&h?`<span class="house-dot" style="background:${h.color}"></span> ${esc(h.name)}`:'—'}</td>
-    <td class="small">${esc(st.residence||'—')}</td>
-    <td class="small">${esc(st.relationship||'')} · ${phShow(st.parentPhone)}</td>
+    ${studentRegisterCellsHTML(s,st)}
     <td class="b"><button class="btn sm ghost" data-tip="Edit student" onclick="A.studentModal('${st.id}')">✏️</button>
     <button class="btn sm btn-del" data-tip="Stop / archive student (moves to Archives → Stopped folder)" onclick="A.archiveStudent('${st.id}')">🗑</button></td></tr>`;}).join('')||'<tr><td colspan="10" class="center mut" style="padding:2rem">No students found. Use <b><b class="pw">+</b> Register student →</b> above (opens the 🆕 Admissions portal).</td></tr>'}
   </tbody></table></div>`;
@@ -14351,26 +15204,21 @@ function renderArchives(){
   const oldies=arch.filter(st=>st.graduated);
   const q=ARCH_Q.toLowerCase();
   const pool=ARCH_F==='old'? oldies : stopped;
-  const list=pool.filter(st=>!q || ((st.firstName||'')+' '+(st.surname||'')+' '+(st.sid||'')).toLowerCase().includes(q));
+  const list=pool.filter(st=>!q || ((st.firstName||'')+' '+(st.surname||'')+' '+(st.otherName||'')+' '+(st.sid||'')).toLowerCase().includes(q));
   /* Round-124: folder cards became dropdown HEADERS — the students table fans open inside the tapped folder */
   const pane=ARCH_F? `<div class="arch-pane">
     <div class="card" style="padding:.7rem .8rem">
     <div class="flex mb2"><input id="arch-q" placeholder="🔍 Search ${ARCH_F==='old'?'old':'stopped'} students…" style="max-width:280px" value="${esc(ARCH_Q)}" oninput="A.archSearch(this.value)"></div>
-    <div class="table-wrap"><table><thead><tr><th>👤 Student</th><th>🆔 ID</th><th>🏫 Last class</th><th>⚧️ Gender</th><th class="age-col">🎂 Age</th><th>📞 Guardian phone</th><th>📁 Folder</th><th>📅 Archived on</th><th>💵 Carried debt</th><th>⚙️ Actions</th></tr></thead><tbody>
-    ${list.map(st=>{ const c=classOf(s,st.classId);
+    <div class="table-wrap students-register-wrap"><table class="students-register-table archives-register-table"><thead><tr><th></th><th><span class="student-heading">🆔 School ID</span></th><th><span class="student-heading">👤 Name</span></th><th><span class="student-heading">⚧️ Gender</span></th><th class="age-col"><span class="student-heading">🎂 Age</span></th><th><span class="student-heading">🏫 Class / Stream</span></th><th><span class="student-heading">🏠 House</span></th><th><span class="student-heading">📍 Residence</span></th><th><span class="student-heading">📞 Guardian</span></th><th>📁 Folder</th><th>📅 Archived on</th><th>💵 Carried debt</th><th>⚙️ Actions</th></tr></thead><tbody>
+    ${list.map(st=>{
       return `<tr>
-      <td><div class="flex" style="gap:.55rem;align-items:center">${st.photo?`<img class="avatar" src="${st.photo}">`:`<span class="av-fallback">${esc((st.firstName||'?')[0]+''+(st.surname||'?')[0])}</span>`}
-        <b>${esc(st.surname)}, ${esc(st.firstName)} ${esc(st.otherName||'')}</b></div></td>
-      <td class="small mut">${esc(st.sid||'—')}</td>
-      <td class="small">${c?`<b>${esc(c.name)}</b> <span class="mut">${c.stream}</span>`:'—'}</td>
-      <td class="small">${st.gender||'—'}</td><td class="age-col">${ageChip(st)}</td>
-      <td class="small">${phShow(st.parentPhone)||'—'}</td>
+      ${studentRegisterCellsHTML(s,st)}
       <td>${st.graduated?'<span class="badge gold">🎓 Old student</span>':'<span class="badge info">⛔️ Stopped</span>'}</td>
       <td class="small">${st.archivedAt? fmtD(new Date(st.archivedAt).toISOString().slice(0,10)) : '—'}</td>
       <td class="small">${!isStopped(st)&&st.carried&&st.carried.amount? ghs(st.carried.amount)+' (owed)' : '—'}</td>
       <td style="white-space:nowrap"><button class="btn sm" data-tip="Restore student to the active register" onclick="A.restoreStudent('${st.id}')">♻️ Restore</button>
         <button class="btn sm btn-del" data-tip="Delete permanently (works whether owing or not)" title="Delete permanently" onclick="A.deleteStudentForever('${st.id}')">🗑</button></td></tr>`;}).join('')
-      || `<tr><td colspan="10" class="center mut" style="padding:2rem">${q?'No students match your search.':ARCH_F==='old'?'📁 Old Students folder is empty — graduates appear here.':'📁 Stopped Students folder is empty — deleted/stopped students appear here.'}</td></tr>`}
+      || `<tr><td colspan="13" class="center mut" style="padding:2rem">${q?'No students match your search.':ARCH_F==='old'?'📁 Old Students folder is empty — graduates appear here.':'📁 Stopped Students folder is empty — deleted/stopped students appear here.'}</td></tr>`}
     </tbody></table></div></div></div>` : '';
   return `
   <div class="mut small mb2">Students who left or <b>completed basic education</b> are hidden from class lists, fees and reports — records stay safe here. Restore anytime.
@@ -16557,7 +17405,7 @@ function renderSubjects(){
     <div class="small mut mb1">Languages chosen at school registration become active sub-subjects below. Manage in the 🏫 School Profile portal (sidebar).</div>
     <div class="wrap" style="display:flex;gap:.4rem;flex-wrap:wrap">${langs.map(l=>`<span class="badge info">${esc(l)}</span>`).join('')||'<span class="mut small">None selected</span>'}</div>
   </div>
-  <div class="card mb2"><h3>🧩 Assign subjects to class streams</h3>
+  <div class="card mb2" id="subject-assignment-card"><h3>🧩 Assign subjects to class streams</h3>
     <div class="small mut mb2">Tap a <b>stream</b> to open it, tick the subjects offered there, then 💾 Save.</div>
     <div class="dd-list">${subjAccordion}</div>
     <div class="flex mt2" style="gap:.5rem">
@@ -17668,6 +18516,7 @@ A.setMonthlyExamMonth = function(m){
 };
 
 function renderScores(){
+  if(featureBlocked('scores'))return '<div class="notice warn">Feature disabled for this school.</div>';const nfGate=nfGuardSub('scores');if(nfGate)return nfGate;
   const _termClosed = !termConfigured(mySchool());
   const s = mySchool(); const year = yearSel();
   const classes = scoreableClasses();
@@ -17734,7 +18583,7 @@ function renderScores(){
   ${SC.view==='entry'? scoreEntryHTML(cls, year) : (SC.view==='perf'? perfHTML(cls, year) : scoreSheetsTabHTML(cls, year))}`;
 }
 
-A.scView=v=>{SC.view=v; render();};
+A.scView=v=>{if(!nfRequireSub('scores',v))return;SC.view=v;render();};
 A.scSet=(k,v)=>{SC[k]=v; render();};
 
 function renderTotalMarksBar(s, cls, type, sub, curTotal, ac){
@@ -19170,6 +20019,7 @@ function perfHTML(cls, year){
 /* ================= ATTENDANCE & TERMS ================= */
 let AT={cls:'',term:'Term 1',view:'daily'};   /* Round-188: the DAILY register leads; per-term grid is one tab away */
 function renderAttendance(){
+  if(featureBlocked('attendance'))return '<div class="notice warn">Feature disabled for this school.</div>';const nfGate=nfGuardSub('attendance');if(nfGate)return nfGate;
   const u=me(); const s=mySchool(); const year=yearSel();
   const classes = u.role==='teacher'? [...teacherScope(u).ids].map(id=>classOf(s,id)).filter(Boolean)
     : sortClasses(s);
@@ -19183,7 +20033,7 @@ function renderAttendance(){
   </div>   <!-- Round-247 (owner): the "Terms, holidays & exam dates" tab carried the very same dates Term Settings owns — it is REMOVED here and fused into 🗓 Term Settings -->
   ${AT.view==='daily'? (u.role==='teacher'? attTeacherDailyHTML(s,u) : attAdminDailyHTML(s)) : attGridHTML(s, cls, classes, year)}`;
 }
-A.atView=v=>{AT.view=v; render();};
+A.atView=v=>{if(!nfRequireSub('attendance',v))return;AT.view=v;render();};
 
 /* ==================== Round-188: 🗓 DAILY REGISTER — class teachers mark Present / Absent / Late / Permission ====================
    Deadline 10:00 am daily (school week) · teacher sends an auto report to the administrator ·
@@ -21838,6 +22688,7 @@ A.feeSearch=v=>{ FEE_Q=v; render(); const i=document.querySelector('#fee-q'); if
 /* ---------- FEES (school-admin portal locked until cash unlocked) ---------- */
 function cashOK(){ const u=me(); return !!(u&&(u.role==='superadmin'||(u.role==='schooladmin'&&sess()&&sess().cashUnlocked))); }
 function renderFees(){
+  if(featureBlocked('fees'))return '<div class="notice warn">Feature disabled for this school.</div>';const nfGate=nfGuardSub('fees');if(nfGate)return nfGate;
   if(financePageLocked('fees')) return cashLockHTML('fees');
   const s=mySchool(); const year=yearSel();
   if(!FE.cls && s.classes.length) FE.cls=s.classes[0].id;
@@ -21872,7 +22723,7 @@ function feesBodyHTML(s, year, unlocked){
     FE.tab==='termend'? termEndTabHTML(s,year,unlocked) :
     FE.tab==='schol'? scholFeesTabHTML(s,year,unlocked) : receiptsTabHTML(s,year)}`;
 }
-A.feTab=t=>{FE.tab=t; render();};
+A.feTab=t=>{if(!nfRequireSub('fees',t))return;FE.tab=t;render();};
 
 /* ==================== Round-346: 🤝 SCHOLARSHIP / PROTOCOL FEES ====================
    The one place the School Administrator sets (and checks) what a scholarship or protocol pupil owes.
@@ -26311,6 +27162,7 @@ A.ctWeekSel=function(v){ CT.week=Math.max(1,parseInt(v,10)||1); render(); };
 A.ctWeekISO=function(v){ CT.weekISO=v||CT.weekISO; render(); };
 A.ctTermPick=function(t){ CT.term=t||CT.term; render(); };
 function renderCanteen(){
+  if(featureBlocked('canteen'))return '<div class="notice warn">Feature disabled for this school.</div>';const nfGate=nfGuardSub('canteen');if(nfGate)return nfGate;
   if(financePageLocked('canteen')) return cashLockHTML('canteen');
   const s=mySchool();
   if(me().role==='teacher'){
@@ -29038,6 +29890,7 @@ A.printStudentReport=function(stId){
 window.A = window.A || {};
 let SET_TAB=null;
 function renderSettings(){
+  if(featureBlocked('settings'))return '<div class="notice warn">Feature disabled for this school.</div>';const nfGate=nfGuardSub('settings');if(nfGate)return nfGate;
   const u=me();
   const isLife = isLifetime(mySchool());
   const tabs = u.role==='superadmin'
@@ -31895,7 +32748,7 @@ A.exportICS=function(){
 function renderUpdates(){
   const u=me(); const isSA=u&&u.role==='schooladmin';
   const fld=isSA?(DB.settings||{}).folder:null;   /* Round-159 */
-  return `<div class="grid g2" style="width:100%;max-width:none">   <!-- Round-236 (owner item 1): this room used to stop at 900px and hug the left edge on a big screen; it now fills the screen it is opened on. -->
+  return `${featureInstallSectionHTML(mySchool())}<div class="grid g2" style="width:100%;max-width:none">   <!-- Round-236 (owner item 1): this room used to stop at 900px and hug the left edge on a big screen; it now fills the screen it is opened on. -->
   ${isSA?schSyncWindowsHTML()+`<div class="card"><h3>📤 Sync to Cloud</h3>
     <div class="small mut">Upload your saved school records directly to the cloud. No HTML package, file download, share sheet, or Super Administrator approval is required.</div>
     <div class="flex mt1" style="gap:8px;align-items:center;flex-wrap:wrap"><button class="btn gold" onclick="A.syncToCloud()">📤 Sync to Cloud</button>
@@ -34364,6 +35217,174 @@ html #modal-root .secrets-dialog .credential-result-body .credential-summary b{c
 html #modal-root .secrets-dialog .credential-tile dt>span:not([class]){color:inherit!important}
 html #modal-root .secrets-dialog .credential-tile dd code,
 html #modal-root .secrets-dialog .credential-context dd code{color:inherit!important;-webkit-text-fill-color:currentColor!important;background:transparent!important}
+
+html[data-theme="dark"] #content .archives-register-table tbody tr{background:#172033!important}
+html[data-theme="dark"] #content .archives-register-table tbody td{background:#172033!important;color:#f1f5f9!important;border-color:#475569!important}
+html[data-theme="dark"] #content .archives-register-table .student-name-link,html[data-theme="dark"] #content .archives-register-table .student-id-cell a{color:#c7d2fe!important;-webkit-text-fill-color:#c7d2fe!important}
+html[data-theme="dark"] #content .archives-register-table .student-stream{color:#cbd5e1!important}
+
+/* R220: teacher Phone / Login Email use full rows, even inside a narrow desktop auth card. */
+.tr-contact-row.frow.c2{grid-template-columns:minmax(0,1fr)!important;gap:.8rem!important;width:100%;min-width:0;margin-bottom:1rem}
+.tr-contact-row>div,.tr-contact-row .tr-login-field{min-width:0;max-width:100%}
+.tr-contact-row #tr-ph,.tr-contact-row #tr-em-sel{display:block;width:100%;min-width:0;max-width:100%;box-sizing:border-box;min-height:44px}
+.tr-contact-row .tr-email-format,.tr-contact-row .tr-email-help{font-size:.76rem;line-height:1.5;text-align:left!important;text-justify:none;word-spacing:normal;letter-spacing:normal;overflow-wrap:anywhere}
+.tr-contact-row .tr-email-format{color:var(--mut);margin:.15rem 0 .45rem}
+.tr-contact-row .tr-email-help{margin:.4rem 0 0}
+.tr-contact-row .tr-email-preview{min-width:0;margin-top:.45rem;padding:.5rem .65rem;border:1px solid #cbd5e1;border-radius:8px;background:#f8fafc}
+.tr-contact-row .tr-email-caption{display:block;font-size:.65rem;font-weight:700;color:#64748b;margin-bottom:.15rem;text-align:left}
+.tr-contact-row #tr-email-value{display:block;width:100%;max-width:100%;font-size:.8rem;font-weight:700;line-height:1.5;color:#1e3a8a;white-space:normal;overflow-wrap:anywhere;word-break:normal;text-align:left;user-select:text}
+html[data-theme="dark"] .tr-contact-row .tr-email-preview{background:#172033!important;border-color:#475569!important}
+html[data-theme="dark"] .tr-contact-row #tr-email-value{color:#c7d2fe!important;-webkit-text-fill-color:#c7d2fe!important}
+html[data-theme="dark"] .tr-contact-row .tr-email-caption,html[data-theme="dark"] .tr-contact-row .tr-email-format{color:#cbd5e1!important}
+/* ============================================================================
+   R220 · FEATURE MANAGEMENT · modern SaaS layer (glassmorphism, gradients)
+   Scoped to .nf-* so no existing screen changes appearance.
+   ============================================================================ */
+.nf-portal{--nf-ink:#0f172a;--nf-mut:#5b6478;--nf-line:rgba(15,23,42,.10);display:flex;flex-direction:column;gap:1.05rem;width:100%;max-width:none}
+.nf-topcard{position:relative;overflow:hidden;display:flex;justify-content:space-between;gap:1rem;flex-wrap:wrap;padding:1.15rem 1.25rem;border-radius:20px;border:1px solid rgba(255,255,255,.42);background:linear-gradient(135deg,#1e1b4b 0%,#312e81 45%,#4c1d95 100%);box-shadow:0 18px 40px rgba(30,27,75,.28);color:#f8fafc}
+.nf-topcard:before{content:"";position:absolute;inset:-40% -10% auto auto;width:420px;height:420px;background:radial-gradient(circle at center,rgba(217,119,6,.55),transparent 62%);pointer-events:none}
+.nf-topcard-main{display:flex;gap:.9rem;align-items:flex-start;min-width:0;position:relative;z-index:1}
+.nf-crest{display:grid;place-items:center;width:60px;height:60px;flex:none;border-radius:18px;background:rgba(255,255,255,.16);backdrop-filter:blur(8px);border:1px solid rgba(255,255,255,.3);font-size:1.6rem;overflow:hidden}
+.nf-crest img{width:100%;height:100%;object-fit:contain}
+.nf-topcard h2{margin:.15rem 0;font-size:1.4rem;line-height:1.25;color:#fff}
+.nf-crumb{font-size:.72rem;letter-spacing:.04em;text-transform:uppercase;color:rgba(248,250,252,.78)}
+.nf-crumb span{cursor:pointer;text-decoration:underline}
+.nf-topcard-side{position:relative;z-index:1;display:flex;flex-direction:column;gap:.5rem;min-width:min(320px,100%)}
+.nf-search{display:flex;align-items:center;gap:.45rem;background:rgba(255,255,255,.94);border-radius:14px;padding:.35rem .6rem;box-shadow:0 6px 18px rgba(15,23,42,.18)}
+.nf-search input{width:100%;border:0;background:transparent;box-shadow:none;font-size:.85rem;color:#172033;min-width:0}
+.nf-search input:focus{outline:0}
+.nf-search:focus-within{outline:2px solid #fbbf24;outline-offset:2px}
+.nf-sync{font-size:.74rem;line-height:1.4;padding:.5rem .7rem;border-radius:12px;background:rgba(255,255,255,.14);border:1px solid rgba(255,255,255,.22);backdrop-filter:blur(8px)}
+.nf-sync.syncing{background:rgba(56,189,248,.22)}
+.nf-sync.ok{background:rgba(16,185,129,.24);border-color:rgba(16,185,129,.5)}
+.nf-sync.failed{background:rgba(244,63,94,.24);border-color:rgba(244,63,94,.5)}
+.nf-chips{display:flex;gap:.4rem;flex-wrap:wrap;margin-top:.35rem}
+.nf-chip{font-size:.7rem;font-weight:700;padding:.22rem .6rem;border-radius:999px;background:rgba(255,255,255,.16);border:1px solid rgba(255,255,255,.26)}
+.nf-chip.ok{background:rgba(16,185,129,.24)}
+.nf-chip.ready{background:rgba(16,185,129,.3)}
+.nf-group-block{display:block}
+.nf-group-head{margin:.2rem 0 .6rem;font-size:1rem;letter-spacing:.02em;color:var(--brand,#1e293b)}
+.nf-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(330px,1fr));gap:.85rem}
+.nf-card{position:relative;border-radius:18px;padding:1rem 1.05rem;background:linear-gradient(160deg,rgba(255,255,255,.96),rgba(244,246,252,.92));border:1px solid rgba(15,23,42,.09);box-shadow:0 10px 26px rgba(15,23,42,.09);backdrop-filter:blur(10px);transition:transform .18s ease,box-shadow .18s ease,border-color .18s ease}
+.nf-card:hover{transform:translateY(-2px);box-shadow:0 16px 34px rgba(15,23,42,.14)}
+.nf-card.nf-changed{border-color:#f59e0b;box-shadow:0 14px 30px rgba(245,158,11,.22)}
+.nf-card.nf-will-on{background:linear-gradient(160deg,rgba(240,253,244,.97),rgba(224,242,254,.9))}
+.nf-card.nf-will-off{background:linear-gradient(160deg,rgba(255,241,242,.97),rgba(248,250,252,.9))}
+.nf-card-head{display:flex;align-items:flex-start;gap:.6rem}
+.nf-card-ico{display:grid;place-items:center;width:36px;height:36px;flex:none;border-radius:12px;background:linear-gradient(135deg,#4f46e5,#7c3aed);color:#fff;font-size:.95rem}
+.nf-card-title{flex:1;min-width:0}
+.nf-card-title h4{margin:0;font-size:1rem;line-height:1.3;color:#111a2e;overflow-wrap:anywhere}
+.nf-group{font-size:.68rem;font-weight:700;text-transform:uppercase;letter-spacing:.06em;color:#6b7280}
+.nf-desc{margin:.55rem 0 .7rem;font-size:.82rem;line-height:1.55;color:var(--nf-mut)}
+.nf-meta-grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:.45rem .7rem;margin:0}
+.nf-meta-grid dt{font-size:.65rem;text-transform:uppercase;letter-spacing:.05em;color:#7b8498;font-weight:700}
+.nf-meta-grid dd{margin:.1rem 0 0;font-size:.78rem;font-weight:700;color:#1d2437}
+.nf-lane{margin-top:.6rem;font-size:.75rem;font-weight:700;padding:.4rem .6rem;border-radius:10px;background:rgba(245,158,11,.14);border:1px dashed rgba(245,158,11,.5);color:#8a5300}
+.nf-lane.ok{background:rgba(16,185,129,.14);border-color:rgba(16,185,129,.5);color:#04664a}
+.nf-plan{display:inline-block;margin-top:.55rem;font-size:.7rem;font-weight:800;color:#b45309;background:rgba(245,158,11,.16);border-radius:8px;padding:.18rem .5rem}
+/* animated switch */
+.nf-switch{position:relative;display:inline-flex;flex:none;width:54px;height:30px;cursor:pointer}
+.nf-switch input{position:absolute;inset:0;opacity:0;width:100%;height:100%;margin:0;z-index:2;cursor:pointer}
+.nf-slider{position:absolute;inset:0;border-radius:999px;background:#cbd5e1;border:1px solid rgba(15,23,42,.12);transition:background .22s ease,box-shadow .22s ease;box-shadow:inset 0 2px 4px rgba(15,23,42,.14)}
+.nf-slider:before{content:"";position:absolute;top:3px;left:3px;width:22px;height:22px;border-radius:50%;background:#fff;box-shadow:0 2px 6px rgba(15,23,42,.28);transition:transform .24s cubic-bezier(.32,1.4,.5,1)}
+.nf-switch input:checked+.nf-slider{background:linear-gradient(135deg,#10b981,#059669)}
+.nf-switch input:checked+.nf-slider:before{transform:translateX(23px)}
+.nf-switch input:focus-visible+.nf-slider{outline:3px solid #f59e0b;outline-offset:2px}
+/* apply bar */
+.nf-bar{position:sticky;bottom:.5rem;z-index:5;display:flex;justify-content:space-between;align-items:center;gap:.9rem;flex-wrap:wrap;padding:.9rem 1.1rem;border-radius:18px;border:1px solid rgba(15,23,42,.1);background:linear-gradient(120deg,rgba(255,255,255,.96),rgba(238,242,255,.94));box-shadow:0 16px 36px rgba(15,23,42,.16);backdrop-filter:blur(12px)}
+.nf-bar-info{font-size:.85rem;color:#334155;max-width:640px}
+.nf-bar-info b{font-size:1.1rem;color:#1e3a8a}
+#nf-apply{min-height:48px;font-size:.95rem;border-radius:14px}
+#nf-apply.nf-ready{animation:nfGlowButton 2.6s ease-in-out infinite}
+#nf-apply:disabled{opacity:.55;cursor:not-allowed}
+@keyframes nfGlowButton{0%,100%{box-shadow:0 8px 20px rgba(217,119,6,.28)}50%{box-shadow:0 12px 30px rgba(217,119,6,.55)}}
+.nf-audit{margin-top:.4rem}
+.nf-tbl td,.nf-tbl th{font-size:.78rem}
+.nf-tbl-actions{white-space:normal}
+.nf-tbl-actions .btn{margin:.12rem .12rem 0 0}
+/* the school's premium countdown card */
+.nf-hero{position:relative;overflow:hidden;border-radius:20px;padding:1.25rem 1.35rem;color:#fff;background:linear-gradient(135deg,#4c1d95 0%,#6d28d9 42%,#0ea5e9 100%);box-shadow:0 22px 48px rgba(76,29,149,.34);animation:nfGlow 5s ease-in-out infinite}
+.nf-hero-ready{background:linear-gradient(135deg,#065f46 0%,#10b981 55%,#34d399 100%);box-shadow:0 22px 48px rgba(6,95,70,.34)}
+.nf-hero:before,.nf-hero-glow{content:"";position:absolute;inset:-30% -15% auto auto;width:460px;height:460px;background:radial-gradient(circle at center,rgba(255,255,255,.28),transparent 62%);pointer-events:none}
+@keyframes nfGlow{0%,100%{box-shadow:0 22px 48px rgba(76,29,149,.30)}50%{box-shadow:0 24px 60px rgba(14,165,233,.42)}}
+.nf-hero-body{position:relative;z-index:1;display:flex;gap:1rem;align-items:flex-start;flex-wrap:wrap}
+.nf-rocket{font-size:2.4rem;line-height:1;animation:nfFloat 3.4s ease-in-out infinite;flex:none}
+@keyframes nfFloat{0%,100%{transform:translateY(0)}50%{transform:translateY(-9px)}}
+.nf-hero-copy{flex:1;min-width:min(420px,100%)}
+.nf-eyebrow{display:inline-block;font-size:.68rem;font-weight:800;letter-spacing:.14em;text-transform:uppercase;padding:.22rem .6rem;border-radius:999px;background:rgba(255,255,255,.2);border:1px solid rgba(255,255,255,.3)}
+.nf-hero h3{margin:.5rem 0 .3rem;font-size:1.35rem;color:#fff;line-height:1.25}
+.nf-more{font-size:.7rem;font-weight:700;background:rgba(255,255,255,.22);border-radius:999px;padding:.16rem .5rem;vertical-align:middle}
+.nf-hero p{margin:.2rem 0 .75rem;font-size:.87rem;line-height:1.6;color:rgba(255,255,255,.94)}
+.nf-clock{display:grid;grid-template-columns:repeat(4,minmax(64px,1fr));gap:.6rem;max-width:460px;margin:.2rem 0 .7rem}
+.nf-unit{border-radius:16px;padding:.6rem .3rem;text-align:center;background:rgba(255,255,255,.18);border:1px solid rgba(255,255,255,.34);backdrop-filter:blur(10px);box-shadow:inset 0 1px 10px rgba(255,255,255,.28),0 8px 18px rgba(15,23,42,.22)}
+.nf-unit b{display:block;font-size:1.9rem;font-weight:900;line-height:1.1;font-variant-numeric:tabular-nums;text-shadow:0 2px 10px rgba(15,23,42,.35);animation:nfPulse 1s ease-in-out infinite}
+.nf-unit span{display:block;margin-top:.15rem;font-size:.68rem;font-weight:700;letter-spacing:.1em;text-transform:uppercase;color:rgba(255,255,255,.86)}
+@keyframes nfPulse{0%,100%{transform:scale(1);opacity:1}50%{transform:scale(1.045);opacity:.94}}
+.nf-hero-line{font-size:.86rem;font-weight:700;color:rgba(255,255,255,.95)}
+.nf-hero-line b{font-variant-numeric:tabular-nums}
+.nf-hero-actions{display:flex;gap:.5rem;flex-wrap:wrap;margin-top:.75rem}
+.nf-hero-actions .btn{border-radius:13px;min-height:44px}
+.nf-hero-actions .btn.gold{background:linear-gradient(135deg,#f59e0b,#d97706);color:#231703;border:0;font-weight:800;box-shadow:0 10px 22px rgba(217,119,6,.4)}
+.nf-hero-actions .btn.ghost{background:rgba(255,255,255,.18);color:#fff;border:1px solid rgba(255,255,255,.36)}
+.nf-hero-note{margin-top:.6rem;font-size:.75rem;color:rgba(255,255,255,.82)}
+.nf-ready-meta{display:flex;gap:.5rem;flex-wrap:wrap;align-items:center;margin:.35rem 0 .2rem}
+.nf-meta{font-size:.75rem;background:rgba(255,255,255,.18);border:1px solid rgba(255,255,255,.28);border-radius:10px;padding:.2rem .55rem}
+#modal-root .nf-lock{text-align:center}
+.nf-lock-ico{font-size:2.4rem;line-height:1;margin-bottom:.3rem}
+.nf-lock-timer{margin:.6rem 0;font-size:.92rem;font-weight:800;color:#7c3aed;background:rgba(124,58,237,.1);border-radius:12px;padding:.55rem .7rem;font-variant-numeric:tabular-nums}
+.nf-lockwrap{text-align:center;border-radius:20px;border:1px solid rgba(124,58,237,.25);background:linear-gradient(160deg,rgba(255,255,255,.98),rgba(243,240,255,.92));box-shadow:0 14px 34px rgba(76,29,149,.16)}
+.nf-install-head{font-weight:800;font-size:.95rem;margin-bottom:.6rem}
+.nf-steps{list-style:none;margin:0 0 .7rem;padding:0;display:grid;gap:.4rem}
+.nf-steps li{display:flex;align-items:center;gap:.55rem;font-size:.85rem;color:#64748b;opacity:.65}
+.nf-steps li.on{color:#0f172a;opacity:1;font-weight:700}
+.nf-dot{width:12px;height:12px;border-radius:50%;background:#cbd5e1;flex:none}
+.nf-steps li.on .nf-dot{background:linear-gradient(135deg,#10b981,#0ea5e9);box-shadow:0 0 0 4px rgba(16,185,129,.18)}
+.nf-progress{height:12px;border-radius:99px;background:#e2e8f0;overflow:hidden;margin-bottom:.5rem}
+.nf-progress i{display:block;height:100%;width:0;background:linear-gradient(90deg,#4f46e5,#0ea5e9,#10b981);transition:width .28s ease}
+.nf-done{margin-bottom:.5rem;font-size:.88rem;color:#065f46;background:rgba(16,185,129,.12);border:1px solid rgba(16,185,129,.35);border-radius:12px;padding:.6rem .7rem}
+.nf-install-log{margin-top:.6rem;font-size:.8rem;color:#475569;min-height:1.2rem}
+.nf-upd{border-left:5px solid #0ea5e9}
+.nf-super{border-radius:20px}
+.nf-kpis{display:grid;grid-template-columns:repeat(auto-fit,minmax(130px,1fr));gap:.6rem;margin-bottom:.9rem}
+.nf-kpi{border-radius:16px;padding:.7rem .8rem;background:linear-gradient(150deg,rgba(79,70,229,.10),rgba(14,165,233,.12));border:1px solid rgba(79,70,229,.16)}
+.nf-kpi b{display:block;font-size:1.5rem;font-weight:900;color:#312e81;line-height:1.1}
+.nf-kpi span{font-size:.72rem;font-weight:700;color:#475569;text-transform:uppercase;letter-spacing:.05em}
+/* confetti */
+.nf-confetti{position:fixed;inset:0;pointer-events:none;z-index:9999;overflow:hidden}
+.nf-confetti span{position:absolute;top:-14px;width:9px;height:14px;border-radius:2px;animation-name:nfFall;animation-timing-function:linear;animation-fill-mode:forwards}
+@keyframes nfFall{0%{transform:translateY(0) rotate(0);opacity:1}100%{transform:translateY(105vh) rotate(720deg);opacity:.9}}
+@media(max-width:640px){
+  .nf-grid{grid-template-columns:1fr}
+  .nf-meta-grid{grid-template-columns:1fr}
+  .nf-clock{grid-template-columns:repeat(4,minmax(56px,1fr));gap:.4rem}
+  .nf-unit b{font-size:1.5rem}
+  .nf-hero{padding:1rem}
+  .nf-hero h3{font-size:1.15rem}
+  .nf-bar{position:static}
+}
+@media(max-width:400px){.nf-clock{grid-template-columns:repeat(2,minmax(64px,1fr))}}
+html[data-theme="dark"] .nf-card,html[data-theme="dark"] .nf-bar{background:#16203a!important;border-color:#27324a!important;color:#f8fafc!important}
+html[data-theme="dark"] .nf-card-title h4,html[data-theme="dark"] .nf-meta-grid dd{color:#f1f5f9!important}
+html[data-theme="dark"] .nf-bar-info{color:#cbd5e1!important}
+html[data-theme="dark"] .nf-desc,html[data-theme="dark"] .nf-meta-grid dt{color:#cbd5e1!important}
+html[data-theme="dark"] .nf-lockwrap{background:#16203a!important;border-color:#3b2f63!important;color:#f8fafc!important}
+html[data-theme="dark"] .nf-audit,html[data-theme="dark"] .nf-super{background:#16203a!important;color:#f8fafc!important}
+
+.nf-school-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(270px,1fr));gap:1rem}
+.nf-school-card{display:flex;flex-direction:column;gap:.6rem;align-items:flex-start;text-align:left;background:var(--card,#fff);color:var(--txt,#172033);padding:1.4rem;border:1px solid var(--line,#dce2ed);border-radius:18px;cursor:pointer;box-shadow:0 8px 25px #1e1b4b0c}
+.nf-school-card:hover{border-color:#7c3aed;transform:translateY(-2px)}.nf-school-card[hidden]{display:none}.nf-school-card b{font-size:1.1rem}.nf-school-card span{font-size:.85rem}.nf-school-card strong{color:#7c3aed}.nf-school-logo{font-size:2rem!important}.nf-school-logo img{width:50px;height:50px;object-fit:contain}
+.nf-switch input:disabled+.nf-slider{opacity:.5;cursor:not-allowed}.nf-portal .notice{overflow-wrap:anywhere}
+.nf-hero-ready .btn.gold{background:#10B981!important;border-color:#10B981!important;color:#062a21!important}
+.nf-topcard .mut{color:#e0e7ff!important}.nf-topcard .btn.ghost{color:#fff;border-color:#ffffff55}
+@media(max-width:600px){.nf-grid,.nf-school-grid{grid-template-columns:minmax(0,1fr)}.nf-topcard-main{width:100%}.nf-topcard-side{width:100%;min-width:0}.nf-topcard h2{overflow-wrap:anywhere}.nf-bar{flex-direction:column}.nf-bar .btn{width:100%;white-space:normal}.nf-portal .table-wrap{max-width:100%;overflow:auto}}
+
+html #content .nf-topcard .nf-crumb .btn.ghost{background:rgba(255,255,255,.15)!important;color:#fff!important;-webkit-text-fill-color:#fff!important;border-color:#ffffff55!important}
+html #content .nf-topcard .small,html #content .nf-topcard p,html #content .nf-desc,html #content .nf-hero p{text-align:left!important;text-justify:none!important}
+.nf-switch input:disabled{cursor:not-allowed}
+.nf-school-grid,.nf-grid{min-width:0}
+@media(prefers-reduced-motion:reduce){.nf-rocket,.nf-hero-glow,.nf-unit b,.nf-confetti span{animation:none!important}}
+
+html #content .nf-topcard .nf-chip{color:#fff!important;-webkit-text-fill-color:#fff!important}
 </style>
 </body>
 </html>
