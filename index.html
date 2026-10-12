@@ -275,7 +275,10 @@ td input.score-in{width:70px}
 /* Exact-step dashboard axes remain readable on large data sets. */
 #content .chart-stepped-scroll{max-width:100%;max-height:340px;overflow:auto;overscroll-behavior:contain;scrollbar-width:thin;scrollbar-color:#d97706 transparent;border-radius:8px}
 #content .chart-stepped-scroll .chart{display:block;min-width:440px}
-#sidebar #nav .portal-finder{flex:0 0 auto;margin:0 0 .65rem;min-width:0}
+#sidebar > .portal-finder{flex:0 0 auto;position:relative;z-index:3;margin:0;padding:.65rem .6rem .5rem;min-width:0;overflow:visible}
+#sidebar > .portal-finder .portal-search-full{position:relative}
+#sidebar > .portal-finder #portal-search-results{position:absolute;top:100%;left:0;right:0;z-index:5;max-height:min(260px,35dvh);box-shadow:0 12px 28px rgba(0,0,0,.24)}
+@media(min-width:901px){body.sb-mini #sidebar > .portal-finder{padding:.5rem .35rem}}
 #sidebar .portal-search-full>label{display:block;color:#f8fafc;font-size:.73rem;font-weight:800;letter-spacing:.04em;margin:0 0 .4rem .2rem}
 #sidebar .portal-search-field{display:flex;align-items:center;gap:.4rem;background:#fff;border:1px solid #cbd5e1;border-radius:10px;padding:.25rem .55rem;min-width:0}
 #sidebar #portal-search{width:100%;min-width:0;box-shadow:none;border:0;border-radius:6px;background:#fff;color:#172033;padding:.45rem 0;font-size:.8rem;line-height:1.4}
@@ -12201,7 +12204,8 @@ function renderShell(){
       <b style="line-height:1.2;font-size:.92rem;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${_hasSchLogo ? esc(s.name) : 'HEREMS<span>_PLUS</span>'}</b>
     </div>
     <div class="s-navmode"><button class="pnm ${NAV_TREE?'':'on'}" data-tip="Classic scrollable list" onclick="A.navModeSet('list')">${ic('list','ic-16')} List</button><button class="pnm ${NAV_TREE?'on':''}" data-tip="Tree view — fold/unfold each section" onclick="A.navModeSet('tree')">${ic('tree','ic-16')} Tree</button><button class="pnm sb-mini-btn" id="sb-mini-btn" data-tip="${document.body.classList.contains('sb-mini')?'Expand the sidebar to full view':'Collapse the sidebar to icons only'}" onclick="A.sbMini()">${document.body.classList.contains('sb-mini')? ic('expand','ic-16')+' Expand' : ic('collapse','ic-16')+' Collapse'}</button></div>   <!-- Round-125: list ⇄ tree switch · Round-238 (owner): ⏮ collapsible sidebar -- desktop mini rail -->
-    <div id="nav" class="${NAV_TREE?'tree':''}">${portalSearchHTML()}${nav}<div class="nf-zone" aria-hidden="true"><div class="nav-fill" aria-hidden="true"><img class="logo" src="${s&&s.logo?s.logo:APP_LOGO_URI}" alt=""></div><div class="nf-name">HEREMS<span style="color:rgba(217,119,6,.9)">_PLUS</span></div><div class="nf-sub">${s&&s.name?esc(s.name):'School Management &amp; Results'}${s&&(s.info||s.motto)?' · '+esc(s.info||s.motto):''}</div>   <!-- Round-146: the SCHOOL MOTTO lives here now (filler text retired) --></div></div>   <!-- Round-108/109: watermark crest (PINNED, untouched) · Round-132: rows STRETCH to fill + the tail becomes a true brand zone -->
+    ${portalSearchHTML()}
+    <div id="nav" class="${NAV_TREE?'tree':''}">${nav}<div class="nf-zone" aria-hidden="true"><div class="nav-fill" aria-hidden="true"><img class="logo" src="${s&&s.logo?s.logo:APP_LOGO_URI}" alt=""></div><div class="nf-name">HEREMS<span style="color:rgba(217,119,6,.9)">_PLUS</span></div><div class="nf-sub">${s&&s.name?esc(s.name):'School Management &amp; Results'}${s&&(s.info||s.motto)?' · '+esc(s.info||s.motto):''}</div>   <!-- Round-146: the SCHOOL MOTTO lives here now (filler text retired) --></div></div>   <!-- Round-108/109: watermark crest (PINNED, untouched) · Round-132: rows STRETCH to fill + the tail becomes a true brand zone -->
     <div class="s-foot">
       <div class="b" style="color:#fff">${avatarIcon(u)} ${esc(u.name)}</div>   <!-- Round-51: role icon (👑 Super Admin · 🏫 School Admin · 👨‍🏫/👩‍🏫 Teacher · 👪 Parent) -->
       <div>${roleLabel(u.role)}${s?' · '+esc(s.name):''}</div>
