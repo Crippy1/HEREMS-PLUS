@@ -6279,6 +6279,14 @@ const JSONBIN_VAULT_GHOSTS=[
   { l:'Set 4 — HEREMS_PLUS (alt)', b:lkOpen('lk$cFQfHrVfHS1/OlUNEjcBFAixDh17LmsBDURhAUADsQ0aLXw4VAYXawBADeAKG3x1aFsJQ3A='), k:lkOpen('lk$cFQfHrQEGHd/OlRbEmQBEwyzCU94dGlWDBlkAkVYtlsffXo6Uw8TMwcUDOUKEHwubQEJFGMDQg60CR5/emFVCBYwARYOtQhLf31qAggZYgBGCbIMHil6b1UNFGAAEQm3Ch15LG5VCxZiBkcPtg8ef3luVAgXYwRPCLYLSm0='), a:lkOpen('lk$cFQfHrQEGHd/OlRbEmQBEwyzDk16f2haDxRkA0MDtQkaK3g4UV8RYgARDbINT31/bFsNRWMEQVuzXBh8emFVBxFiAxMM5AobfX1sBwoVYlBEX7NbGyp+bFUIF2sCQwu2CRp6KG5UCEBmAkBYsAUdeX9sUgwWawZOCrMOS20=') }
 ];
 const JB_DOWN_MS = 10*60*1000;   /* a failed set is skipped for 10 minutes, then quietly re-probed */
+const JB_THROTTLE_MS = 45*1000;
+const JB_THROTTLE_RETRY_MS = 10*1000;   /* Round-321: how long a throttled request waits before ONE retry.
+   Sync is a deliberate tap, so a ten-second breath is invisible next to a failed upload — and it only
+   ever happens in the moment the cloud actually asked us to slow down. */   /* Round-321: a THROTTLED set rests for one short breath, not ten minutes.
+   JSONBin answers a burst of requests with HTTP 429 ("Too Many Requests"). Treating that like a real failure
+   parked the cloud set for the full 10-minute cooldown, so every sync afterwards failed with "no cloud
+   connection answered" — which reads to a school exactly like "the cloud bin is broken". The bin is fine;
+   it only asked us to slow down, so we wait a moment and it leads again by itself. */
 function jbVaultRaw(){ const j=DB.settings.jsonbin||(DB.settings.jsonbin={});
   if(!Array.isArray(j.vaults) || !j.vaults.length){
     j.vaults=JSONBIN_VAULT_GHOSTS.map(v=>({ label:v.l, binId:v.b, masterKey:v.k, accessKey:v.a }));
@@ -6367,7 +6375,7 @@ function jbErrs(){
   const st=jbState(); st.err=st.err||{}; st.okAt=st.okAt||{}; return st; }
 function jbErrKind2(st, body){ const b=String(body||'');
   if(st===0) return 'network';
-  if(/requests exhausted|quota|buy additional|too many requests/i.test(b)) return 'quota';
+  if(st===429||/requests exhausted|quota|buy additional|too many requests/i.test(b)) return 'quota';   /* Round-321: 429 is a throttle — recognised even when the body is an HTML error page or empty */
   if(st===401||st===403||/invalid master key|doesn.t belong|unauthor/i.test(b)) return 'keys';
   if(st===404) return 'no-bin';
   if(st>=500) return 'server';
@@ -6388,10 +6396,13 @@ function jbAttemptOrder(vs){
 function jbMarkOk(i, st){ const S=jbState(); S.down[i]=0; S.okAt[i]=Date.now(); S.err[i]='';
   if(Number(S.carrying||0)!==Number(i) && S.okAt[i] && Number(S.carrying)!==Number(i)) S.switched=(S.carrying!==undefined && S.carrying!==i)?Date.now():(S.switched||0);
   S.carrying=i;   /* Round-226: who ANSWERED — the owner's preference (pref) is untouched, so the preferred set comes straight back when it is healthy */ }
-function jbMarkDown(i, st, body){ const S=jbState(); S.down[i]=Date.now()+JB_DOWN_MS; S.err[i]=jbErrKind2(st, body);
+function jbMarkDown(i, st, body){ const S=jbState(); const kind=jbErrKind2(st, body);
+  /* Round-321: a throttled set is not a broken set — see JB_THROTTLE_MS above. */
+  S.down[i]=Date.now()+(kind==='quota'?JB_THROTTLE_MS:JB_DOWN_MS); S.err[i]=kind;
   if(st===0 && S.err[i]==='network') S.err[i]='network';
   S.msg=S.msg||{};
-  S.msg[i]=String(body==null?'':body).replace(/^\s*\{?\s*"?message"?\s*:?\s*"?/,'').replace(/["}]+$/,'').slice(0,150);   /* Round-231: keep the PROVIDER's own words, not our summary */ }
+  S.msg[i]= kind==='quota' ? 'Cloud is busy (too many requests). Wait a moment, then tap \u2601\ufe0f Sync now again.'
+    : String(body==null?'':body).replace(/^\s*\{?\s*"?message"?\s*:?\s*"?/,'').replace(/["}]+$/,'').slice(0,150);   /* Round-231: keep the PROVIDER's own words, not our summary */ }
 function jbResp(o){ o=o||{}; const b=String(o.body==null?'':o.body);
   return { ok:!!o.ok, status:o.status||0, text:async()=>b, json:async()=>JSON.parse(b) }; }
 async function jbCreateBin(v, bodyStr){   /* self-heal: a vault whose bin is gone gets a fresh one */
@@ -6457,7 +6468,7 @@ async function jbReadBest(c){
   const S=jbState(), vs=jbLiveSets();   /* Round-231: a retired set is never read */
   if(!vs.length) return null;
   const order=jbAttemptOrder(vs);
-  let best=null, bestStamp=0, first=null, tried=0;
+  let best=null, bestStamp=0, first=null, tried=0, throttled=0;
   const bestKnown=Number(S.bestStamp||0);
   /* the newest record we KNOW any set to hold (from earlier reads/writes) — the hunt may not stop short of it */
   let knownMax=bestKnown; try{ Object.keys(S.stampAt||{}).forEach(k=>{ knownMax=Math.max(knownMax, Number(S.stampAt[k])||0); }); }catch(e){}
@@ -6474,7 +6485,20 @@ async function jbReadBest(c){
          (one request on the happy path; the other sets are only visited when we actually need them) */
       if(!empty && st>=knownMax && tried===1 && !parallel){ break; }
       if(!first) first=Object.assign({}, out, { from:v.i });
-    } else { tried--; jbMarkDown(v.i, out.status, out.body); if(first===null) first=Object.assign({}, out, { from:v.i, empty:true }); }
+    } else { tried--; if(jbErrKind2(out.status, out.body)==='quota') throttled++; jbMarkDown(v.i, out.status, out.body); if(first===null) first=Object.assign({}, out, { from:v.i, empty:true }); }
+  }
+  /* Round-321: a READ that met nothing but a throttle gets ONE retry after a short breath.
+     Sync is a deliberate tap, so ten seconds is invisible next to a failed download — and a school whose
+     whole class just synced at once gets their data instead of "no cloud connection answered".
+     Only ever one retry, and only when every set answered 429, so a healthy cloud never pays for it. */
+  if(!best && throttled){
+    try{ await new Promise(res=>setTimeout(res, JB_THROTTLE_RETRY_MS)); }catch(e){}
+    const rv=order[0]; if(rv){
+      const again=await jbGetTry(rv);
+      if(again.ok && !jbLooksEmpty(again.body)){ best=Object.assign({}, again, { from:rv.i }); bestStamp=Number(jbRecStamp(again.body))||0; jbMarkOk(rv.i, again.status); }
+      else if(again.ok){ if(!first) first=Object.assign({}, again, { from:rv.i }); }
+      else jbMarkDown(rv.i, again.status, again.body);
+    }
   }
   const chosen=best||first;
   if(!chosen) return null;
@@ -6495,7 +6519,7 @@ async function cloudFetch(c, method, bodyStr){
     if(got) return jbResp({ ok:got.ok, status:got.status, body:got.body });
     return jbResp({ ok:false, status:0, body:'no cloud connection answered' }); }
   const order=jbAttemptOrder(vs);
-  let firstFail=null, tried=0;
+  let firstFail=null, tried=0; const retried=new Set();   /* Round-321: one throttle-retry per set per sync */
   for(let n=0;n<order.length;n++){
     const v=order[n];
     const q=cloudReq({ bin:v.bin, mk:v.mk, ak:v.ak }, method, bodyStr);
@@ -6511,6 +6535,26 @@ async function cloudFetch(c, method, bodyStr){
       try{ hp107CloudMetadataSave(); }catch(e){}
       if(method==='PUT' && bodyStr){ try{ jbMirrorWrite(bodyStr, v.i); }catch(e){} }
       return jbResp(out);
+    }
+    /* Round-321: a THROTTLED request is retried once after a short breath instead of failing the sync.
+       JSONBin answers a burst of uploads with HTTP 429 — the data and the keys are fine, it only wants us
+       to slow down. One retry turns "Upload failed" into a successful sync for a school that tapped Sync
+       twice in a row, and costs an extra request only in the moment the cloud actually asked for it. */
+    if(jbErrKind2(out.status, out.body)==='quota' && !retried.has(v.i)){
+      retried.add(v.i);
+      try{ await new Promise(res=>setTimeout(res, JB_THROTTLE_RETRY_MS)); }catch(e){}
+      const q2=cloudReq({ bin:v.bin, mk:v.mk, ak:v.ak }, method, bodyStr);
+      let r2=null;
+      try{ const rr=await cloudTimedFetch(q2.url, q2.opts); r2={ ok:!!rr.ok, status:rr.status, body:await rr.text() }; }
+      catch(e){ r2={ ok:false, status:0, body:'network: '+((e&&e.message)||e) }; }
+      if(r2.ok){
+        jbMarkOk(v.i, r2.status);
+        try{ jbState().writeAt[v.i]=Date.now(); }catch(e){}
+        try{ hp107CloudMetadataSave(); }catch(e){}
+        if(method==='PUT' && bodyStr){ try{ jbMirrorWrite(bodyStr, v.i); }catch(e){} }
+        return jbResp(r2);
+      }
+      out=r2;
     }
     tried++;
     jbMarkDown(v.i, out.status, out.body);
@@ -6533,7 +6577,11 @@ function cloudReq(c, method, bodyStr){   /* {url, opts} for the CENTRAL database
     opts:{ method:'PUT', headers:{ 'Content-Type':'application/json', 'X-Master-Key':c.mk, 'X-Bin-Meta':'false' }, body:bodyStr } };
   return { url:'https://api.jsonbin.io/v3/b/'+encodeURIComponent(c.bin)+'/latest?t='+Date.now(),
     opts:{ cache:'no-store', headers:{ 'X-Master-Key':c.mk, 'X-Bin-Meta':'false' } } }; }
-async function httpErrNote(r){ try{ const t=await r.text(); try{ const m=JSON.parse(t); return m&&m.message?(' — '+String(m.message).slice(0,80)):''; }catch(e2){ return t?(' — '+String(t).slice(0,80)):''; } }catch(e){ return ''; } }   // Round-68: surface JSONBin's own reason (e.g. "Invalid master key")
+async function httpErrNote(r){ try{ const t=await r.text();
+  /* Round-321: JSONBin answers a throttle with an HTML error page — say that in plain English, not markup. */
+  if((r&&Number(r.status)===429)||/too many requests/i.test(t)) return ' — the cloud is busy right now (too many requests). Wait a moment, then sync again.';
+  if(/^\s*<(!doctype|html)/i.test(t)){ const tt=t.match(/<title[^>]*>([^<]*)<\/title>/i); return tt&&tt[1]?(' — '+String(tt[1]).trim().slice(0,80)):' — the cloud returned an error page.'; }
+  try{ const m=JSON.parse(t); return m&&m.message?(' — '+String(m.message).slice(0,80)):''; }catch(e2){ return t?(' — '+String(t).slice(0,80)):''; } }catch(e){ return ''; } }   // Round-68: surface JSONBin's own reason (e.g. "Invalid master key")
 /* Round-72: JSONBin answers an X-Bin-Meta:false read with the RAW record ({app,stamp,device,data}) — there is
    NO {record:…} wrapper. For months every cloud read below looked for j.record and found undefined:
    syncPull was forever 'empty' (codes/logins never adopted cross-device), the ☁️ strip said "empty", and
@@ -6872,7 +6920,7 @@ async function syncPushInner(featureTx){
       snap=slimForCloud(Object.assign({}, DB, {session:null}));   // device session + MEDIA never sync (Round-81)
     if(grec&&grec.data&&grec.data.settings){
       const remote=grec.data; const out=Object.assign({}, snap);
-      SYNC_UNION.concat(RECORD_UNION).forEach(k=>{ out[k]= k==='schools'?mergeSchoolsJoined(snap[k],remote[k],remote[k]):k==='users'? mergeUsersNewestPw(snap[k], remote[k]) : mergeUnionById(snap[k], remote[k]); });   // local-first: the pusher's own edits win per id, cloud-only items survive · Round-84: users merge by NEWEST password stamp — a stale device can never re-publish mustChange:true over a fresh change   /* Round-92b: records union too — a push can never wipe the cloud */
+      SYNC_UNION.concat(RECORD_UNION).forEach(k=>{ out[k]= k==='schools'?mergeSchoolsJoined(snap[k],remote[k],remote[k]):k==='users'? mergeUsersNewestPw(snap[k], remote[k]) : k==='mocks'? mergeMocks(snap[k], remote[k]) : mergeUnionById(snap[k], remote[k]); });   // local-first: the pusher's own edits win per id, cloud-only items survive · Round-84: users merge by NEWEST password stamp — a stale device can never re-publish mustChange:true over a fresh change   /* Round-92b: records union too — a push can never wipe the cloud */
       mergeSyncMaps(out, snap, remote);
       out.tomb=mergeTomb(cloudTombOf(snap), cloudTombOf(remote));   /* Round-92: only Super-Admin SCHOOL deletes may travel */
       applyCloudTomb(out);                                        /* …and only those graves are honoured in the cloud record */
@@ -6934,6 +6982,34 @@ function mergeUnionById(remoteArr, localArr){
    change-password prompt (with its blocks) came BACK after the user had already changed it. Per user id,
    the copy carrying the NEWEST pwChangedAt/pwResetAt stamp always wins; union order is kept for the rest. */
 function userPwStamp(u){ return Number((u&&(u.pwChangedAt||u.pwResetAt))||0); }
+/* Round-321: MERGE MOCK SERIES ACROSS PLATFORMS. Mock is a standalone examination (always 100 marks), so a
+   whole-series last-writer-wins swap was doubly wrong: a device that had simply not pulled yet could erase a
+   Mock the other platform had just created. Now Mocks union by id like every other first-class record AND,
+   where BOTH sides hold the same Mock, their per-student / per-subject mark maps union too — so the Web app
+   and the installed Android/iOS app can each enter their own subjects of the SAME Mock without wiping each
+   other. Conflicting cells follow the union's direction (primary wins), matching every other collection. */
+function mergeMocks(primaryArr, secondaryArr){
+  const rows=mergeUnionById(primaryArr, secondaryArr);
+  const peer={}; (secondaryArr||[]).forEach(m=>{ if(m&&m.id!==undefined&&m.id!==null) peer[m.id]=m; });
+  return rows.map(m=>{
+    if(!m||m.id===undefined||m.id===null) return m;
+    const other=peer[m.id]; if(!other) return m;
+    const out=Object.assign({}, m);
+    ['scores','absent'].forEach(k=>{
+      const a=m[k], b=other[k];
+      if(a&&typeof a==='object'&&!Array.isArray(a)&&b&&typeof b==='object'&&!Array.isArray(b)){
+        const merged=Object.assign({}, b);                    /* start from the peer's cells… */
+        Object.keys(a).forEach(sid=>{
+          const av=a[sid], bv=b[sid];
+          if(av&&typeof av==='object'&&!Array.isArray(av)&&bv&&typeof bv==='object'&&!Array.isArray(bv)) merged[sid]=Object.assign({}, bv, av);   /* …per subject, the primary's mark wins */
+          else if(av!==undefined) merged[sid]=av;
+        });
+        out[k]=merged;
+      }else if(a===undefined&&b!==undefined) out[k]=b;
+    });
+    return out;
+  });
+}
 function mergeUsersNewestPw(a, b){
   const uni=mergeUnionById(a, b); const best={};
   (a||[]).concat(b||[]).forEach(u=>{ if(!u||u.id===undefined||u.id===null) return; const k='i'+u.id;
@@ -6947,7 +7023,7 @@ const SYNC_UNION=['schools','users','notes','messages','pwReq','tplReq','events'
    adopt, before they ever publish. Union merges run by id in BOTH directions (on push, the pusher's own
    edits win per id; on pull, the cloud copy wins per id); removals happen ONLY via the Super-Admin
    school-delete cascade (schools+users graves — everything else stays, per policy). */
-const RECORD_UNION=['students','payments','canteenPay','expenditure','salaryPay','activity','audits','activities','prefects','committees','outbox'];
+const RECORD_UNION=['students','payments','canteenPay','expenditure','salaryPay','activity','audits','activities','prefects','committees','outbox','mocks'];
 /* Round-73: TOMBSTONES — deletions SYNC too. A pure union can never delete (a cloud-only survivor is always
    kept — that is the anti-wipe), so "Super Admin deleted a school" never reached other devices: the school
    resurrected on the next sync. Now a deletion records a marker {c:<collection>, id, ts}; every merge (push
@@ -6965,7 +7041,7 @@ function mergeTomb(a, b){ const byKey={};
 function recordDeath(coll, id){ DB.tomb=mergeTomb(DB.tomb, [{c:coll, id:id, ts:Date.now()}]); }
 /* Round-80: enforce against EVERY id-bearing record array, not just the sync-union ones — a death recorded
    for students/payments/etc (e.g. inside a portable school file) must bury the record everywhere too. */
-const TOMB_COLLS=SYNC_UNION.concat(['students','payments','canteenPay','expenditure','salaryPay','activity','audits','activities','prefects','committees','outbox']);
+const TOMB_COLLS=SYNC_UNION.concat(['students','payments','canteenPay','expenditure','salaryPay','activity','audits','activities','prefects','committees','outbox','mocks']);
 function applyTomb(d){ if(!d) return d; const dead={};
   tombOf(d).forEach(t=>{ dead[t.c+'|'+t.id]=1; });
   TOMB_COLLS.forEach(k=>{ if(Array.isArray(d[k])) d[k]=d[k].filter(x=>{ if(!x||x.id===undefined||x.id===null) return true; return !dead[k+'|'+x.id]; }); });
@@ -7029,7 +7105,7 @@ async function syncPull(quiet, force){ const c=syncCfg(); if(!c.bin||!c.mk) retu
       const sess=DB.session; const beforeIds=new Set((DB.schools||[]).map(x=>x.id));
       const beforeReqIds=new Set((DB.syncReq||[]).map(x=>x.id));   /* Round-93 */
       const remote=rec.data;
-      SYNC_UNION.concat(RECORD_UNION).forEach(k=>{ remote[k]= k==='schools'?mergeSchoolsJoined(remote[k],DB&&DB[k],remote[k]):k==='users'? mergeUsersNewestPw(remote[k], DB&&DB[k]) : mergeUnionById(remote[k], DB&&DB[k]); });   // Round-84: per user id, the copy with the NEWEST pwChangedAt/pwResetAt wins — a fresh password change can never be rolled back by a stale side   /* Round-92b: an adopt can never wipe un-pushed records on this device */
+      SYNC_UNION.concat(RECORD_UNION).forEach(k=>{ remote[k]= k==='schools'?mergeSchoolsJoined(remote[k],DB&&DB[k],remote[k]):k==='users'? mergeUsersNewestPw(remote[k], DB&&DB[k]) : k==='mocks'? mergeMocks(remote[k], DB&&DB[k]) : mergeUnionById(remote[k], DB&&DB[k]); });   // Round-84: per user id, the copy with the NEWEST pwChangedAt/pwResetAt wins — a fresh password change can never be rolled back by a stale side   /* Round-92b: an adopt can never wipe un-pushed records on this device */
       reconcileSchoolJoins(remote);
       mergeSyncMaps(remote, remote, DB);
       remote.tomb=mergeTomb(cloudTombOf(remote), tombOf(DB));  /* Round-92: adopt Super-Admin SCHOOL deletes · keep THIS device's own local graves · junk cloud graves are ignored */
@@ -8442,7 +8518,7 @@ A.asSetupOpen=function(type){
  openModal(mHead('Setup Exam Composition / Quarter Setup')+'<div class="m-body as-setup"><div class="as-eyebrow">ADMIN ONLY · ALL SUBJECTS · '+esc(asTitle(s,type))+'</div><p>'+esc(p.term)+' · '+esc(p.year)+'</p><h3>Is this for Entire School?</h3><div class="as-scope"><button type="button" class="btn" onclick="A.asScope(\'school\')">YES · Entire School</button><button type="button" class="btn ghost" onclick="A.asScope(\'stream\')">NO · Per Stream</button></div><div id="as-setup-fields" aria-live="polite"></div></div><div class="m-foot"><button class="btn ghost" onclick="closeModal()">Cancel</button><button class="btn gold" id="as-save" hidden onclick="A.asSetupSave()">Save Composition &amp; Open Entry</button></div>');return true;
 };
 function asCompositionForm(s,key,label,comp){
- const types=asTypesList(s).filter(x=>x.type!=='end_term'),mocks=(DB.mocks||[]).filter(m=>m.schoolId===s.id),rows=types.map(x=>{const r=comp.components[x.type]||{};return '<tr data-as-type="'+esc(x.type)+'"><td><label class="as-type-label"><input data-as-on type="checkbox" '+(r.selected?'checked':'')+' onchange="A.asCompositionPreview()">'+esc(x.title)+'</label></td><td><input data-as-rate aria-label="'+esc(x.title)+' contribution percent" type="number" step="any" min="0" max="90" value="'+esc(r.conversionRate??'')+'" oninput="A.asCompositionPreview()"></td><td><input data-as-score aria-label="'+esc(x.title)+' set score" type="number" step="any" min="0" value="'+esc(r.score??'')+'" oninput="A.asCompositionPreview()"></td></tr>'+(x.type==='mock'?'<tr data-as-mock-row><td colspan="3"><label class="small">Mock series to include in Class Assessment <select data-as-mock-id><option value="">Choose a series if Mock is selected</option>'+mocks.map(m=>'<option value="'+esc(m.id)+'" '+(r.mockId===m.id?'selected':'')+'>'+esc(m.name)+'</option>').join('')+'</select></label></td></tr>':'');}).join('');
+ const types=asTypesList(s).filter(x=>x.type!=='end_term'&&x.type!=='mock'),mocks=(DB.mocks||[]).filter(m=>m.schoolId===s.id),rows=types.map(x=>{const r=comp.components[x.type]||{};return '<tr data-as-type="'+esc(x.type)+'"><td><label class="as-type-label"><input data-as-on type="checkbox" '+(r.selected?'checked':'')+' onchange="A.asCompositionPreview()">'+esc(x.title)+'</label></td><td><input data-as-rate aria-label="'+esc(x.title)+' contribution percent" type="number" step="any" min="0" max="90" value="'+esc(r.conversionRate??'')+'" oninput="A.asCompositionPreview()"></td><td><input data-as-score aria-label="'+esc(x.title)+' set score" type="number" step="any" min="0" value="'+esc(r.score??'')+'" oninput="A.asCompositionPreview()"></td></tr>'+(x.type==='mock'?'<tr data-as-mock-row><td colspan="3"><label class="small">Mock series to include in Class Assessment <select data-as-mock-id><option value="">Choose a series if Mock is selected</option>'+mocks.map(m=>'<option value="'+esc(m.id)+'" '+(r.mockId===m.id?'selected':'')+'>'+esc(m.name)+'</option>').join('')+'</select></label></td></tr>':'');}).join('');
  return '<section class="as-composition" data-as-key="'+esc(key)+'"><h3>'+esc(label)+'</h3><p class="small"><b>Always Class Assessment / Class Score + Exam.</b> Select at least one class type. The Exam share is deducted automatically from 100%.</p><div class="as-exam-base"><label>End of Term Exam set score<input data-as-exam-score type="number" min="0" step="any" value="'+esc(comp.exam?.score??'')+'" placeholder="e.g. 100 or 70"></label><div data-as-summary role="status"></div></div><div class="table-wrap"><table class="as-composition-table"><thead><tr><th>Class Assessment / Class Score</th><th>Contribution %</th><th>Set score</th></tr></thead><tbody>'+rows+'</tbody></table></div><div data-as-error class="as-error" role="alert"></div></section>';
 }
 A.asScope=function(scope){
@@ -12436,7 +12512,7 @@ const NAV = {
 };
 
 /* Sidebar portal finder: real, role-scoped routes and sub-portals; normal guards still apply. */
-let PORTAL_SEARCH_Q='', PORTAL_SEARCH_INDEX=-1;
+let PORTAL_SEARCH_Q='', PORTAL_SEARCH_INDEX=-1, PORTAL_SEARCH_OPEN=false;
 function portalCatalog(){
   const u=me(); if(!u) return [];
   const s=mySchool(), entries=[];
@@ -12514,10 +12590,14 @@ function portalMatches(query){
   return portalCatalog().filter(e=>!q||rank(e)<3).sort((a,b)=>rank(a)-rank(b)||a.title.localeCompare(b.title));
 }
 function portalSearchHTML(){
-  return `<div class="portal-finder" id="portal-finder"><button class="portal-search-mini" aria-label="Expand sidebar and search portals" onclick="A.portalSearchExpand()">🔍</button><div class="portal-search-full"><label for="portal-search">Find a portal</label><div class="portal-search-field"><span aria-hidden="true">${ic('search','ic-16')}</span><input id="portal-search" class="hp-search-input" type="search" dir="ltr" placeholder="Search portal..." aria-label="Search portal" value="${esc(PORTAL_SEARCH_Q)}" autocomplete="off" role="combobox" aria-autocomplete="list" aria-expanded="false" aria-controls="portal-search-results" oninput="A.portalSearch(this.value)" onfocus="A.portalSearch(this.value)" onkeydown="A.portalSearchKey(event)"></div><div id="portal-search-results" role="listbox" aria-label="Matching portals" hidden></div><div id="portal-search-status" class="portal-search-status" role="status" aria-live="polite"></div></div></div>`;
+  return `<div class="portal-finder" id="portal-finder"><button class="portal-search-mini" aria-label="Expand sidebar and search portals" onclick="A.portalSearchExpand()">🔍</button><div class="portal-search-full"><label for="portal-search">Find a portal</label><div class="portal-search-field"><span aria-hidden="true">${ic('search','ic-16')}</span><input id="portal-search" class="hp-search-input" type="search" dir="ltr" placeholder="Search portal..." aria-label="Search portal" value="${esc(PORTAL_SEARCH_Q)}" autocomplete="off" role="combobox" aria-autocomplete="list" aria-expanded="false" aria-controls="portal-search-results" oninput="A.portalSearch(this.value)" onclick="A.portalSearch(this.value)" onfocus="A.portalSearchFocus(this)" onkeydown="A.portalSearchKey(event)"></div><div id="portal-search-results" role="listbox" aria-label="Matching portals" hidden></div><div id="portal-search-status" class="portal-search-status" role="status" aria-live="polite"></div></div></div>`;
 }
 function paintPortalMatches(){
   const input=$('#portal-search'),list=$('#portal-search-results'); if(!input||!list) return;
+  /* The dropdown may only appear once the user has actually engaged the search box
+     (clicked/tapped it, typed, or used the 🔍 button). A plain click on the sidebar —
+     or any focus that arrives from somewhere else — must leave it closed. */
+  if(!PORTAL_SEARCH_OPEN){ if(!list.hidden){list.hidden=true;input.setAttribute('aria-expanded','false');} return; }
   const matches=portalMatches(input.value);
   list.hidden=false; input.setAttribute('aria-expanded','true');
   if(PORTAL_SEARCH_INDEX>=matches.length) PORTAL_SEARCH_INDEX=-1;
@@ -12529,13 +12609,13 @@ function paintPortalMatches(){
   else input.removeAttribute('aria-activedescendant');
   const status=$('#portal-search-status'); if(status) status.textContent=matches.length+' matching portal'+(matches.length===1?'':'s');
 }
-A.portalSearch=function(q){PORTAL_SEARCH_Q=q;PORTAL_SEARCH_INDEX=-1;paintPortalMatches();};
-A.portalSearchClose=function(){const list=$('#portal-search-results'),input=$('#portal-search');if(list)list.hidden=true;if(input){input.setAttribute('aria-expanded','false');input.removeAttribute('aria-activedescendant');}const status=$('#portal-search-status');if(status)status.textContent='';PORTAL_SEARCH_INDEX=-1;};
+A.portalSearch=function(q){PORTAL_SEARCH_Q=q;PORTAL_SEARCH_INDEX=-1;PORTAL_SEARCH_OPEN=true;paintPortalMatches();};
+A.portalSearchClose=function(){PORTAL_SEARCH_OPEN=false;const list=$('#portal-search-results'),input=$('#portal-search');if(list)list.hidden=true;if(input){input.setAttribute('aria-expanded','false');input.removeAttribute('aria-activedescendant');}const status=$('#portal-search-status');if(status)status.textContent='';PORTAL_SEARCH_INDEX=-1;};
 A.portalSearchKey=function(event){
   const matches=portalMatches(event.target.value);
   if(event.key==='Escape'){event.preventDefault();event.stopPropagation();A.portalSearchClose();return;}
   if(event.key==='ArrowDown'||event.key==='ArrowUp'){
-    event.preventDefault();if(!matches.length)return;
+    event.preventDefault();if(!matches.length)return;PORTAL_SEARCH_OPEN=true;
     PORTAL_SEARCH_INDEX=event.key==='ArrowDown'?(PORTAL_SEARCH_INDEX+1)%matches.length:(PORTAL_SEARCH_INDEX<0?matches.length-1:(PORTAL_SEARCH_INDEX-1+matches.length)%matches.length);paintPortalMatches();
   }else if(event.key==='Enter'){
     event.preventDefault();const e=matches[PORTAL_SEARCH_INDEX<0?0:PORTAL_SEARCH_INDEX];if(e)A.portalSearchOpen(e.id);
@@ -12544,11 +12624,16 @@ A.portalSearchKey=function(event){
 A.portalSearchOpen=function(id){
   const e=portalCatalog().find(e=>e.id===id);if(!e||!canAccess(e.page))return toast('Not available for your role','bad');
   if(e.apply)e.apply();
+  A.portalSearchClose();
   PORTAL_SEARCH_Q='';PORTAL_SEARCH_INDEX=-1;
   go(e.page,e.param);
   if(e.anchor) requestAnimationFrame(()=>{if(PAGE!==e.page||moduleLocked(e.page)||financePageLocked(e.page))return;const el=document.getElementById(e.anchor);if(el)el.scrollIntoView({block:'start',behavior:'smooth'});});
 };
-A.portalSearchExpand=function(){const input=$('#portal-search');if(input)input.focus();};
+A.portalSearchExpand=function(){const input=$('#portal-search');if(input){input.focus();A.portalSearch(input.value||'');}};
+/* Focus alone must not open the list — unless a query is already sitting in the box
+   (keyboard users returning to it) — so clicking anywhere on the sidebar stays clean. */
+A.portalSearchFocus=function(el){ if(el&&String(el.value||'').trim()){PORTAL_SEARCH_OPEN=true;paintPortalMatches();} else A.portalSearchClose(); };
+document.addEventListener('focusout',event=>{const t=event.target;if(!t||t.id!=='portal-search')return;const n=event.relatedTarget;if(n&&n.closest&&n.closest('#portal-finder'))return;A.portalSearchClose();});
 A.tbSyncHeight=function(){
  const bar=document.getElementById('topbar');if(!bar)return 0;
  const h=Math.round(bar.getBoundingClientRect().height)||54;
@@ -13491,7 +13576,7 @@ function mockLiveCalc(mid){   /* the cells go first — instant and cheap; the b
 function mockBandsModal(){const s=mySchool(),u=me();if(!s||!u||u.role!=='schooladmin')return toast('Only the School Administrator can change Mock ranges','bad');const bs=numberBandsOf(s);openModal(`${mHead('⚙️ Mock Number-System Ranges')}<div class="m-body"><div class="notice info mini mb2">Mock exams always use grades 1–9. The School Administrator controls the minimum score for each grade.</div><div class="grid g3">${bs.map(b=>`<div><label>Grade ${b.l} minimum</label><input id="nb-${b.l}" type="number" min="0" max="100" value="${b.min}"></div>`).join('')}</div></div><div class="m-foot"><button class="btn ghost" onclick="A.closeModal()">Cancel</button><button class="btn gold" onclick="A.saveMockBands()">Save ranges</button></div>`,{wide:true});}
 A.saveMockBands=function(){const s=mySchool(),u=me(),a=[];if(!s||!u||u.role!=='schooladmin')return toast('Only the School Administrator can change Mock ranges','bad');for(let i=1;i<=9;i++){const e=$('#nb-'+i),v=Number(e&&e.value);if(!Number.isFinite(v)||v<0||v>100)return toast('Enter every Mock range from 0 to 100','bad');a.push({l:String(i),min:v});}for(let i=1;i<a.length;i++)if(a[i].min>=a[i-1].min)return toast('Each lower grade must have a lower minimum','bad');s.numberBands=a;saveDB();closeModal();render();toast('Mock Number-System ranges saved','ok');};
 A.mockDelete=function(mid){const m=(DB.mocks||[]).find(x=>x.id===mid);if(!m||me().role!=='schooladmin')return;openModal(`${mHead('🗑️ Delete Mock Examination')}<div class="m-body"><div class="mock-delete-card"><div class="mock-delete-icon">⚠️</div><h3>Delete ${esc(m.name)}?</h3><p>This will permanently remove this Mock, all saved scores, grades, aggregates and progress history. This action cannot be undone.</p><p class="small mut">Please confirm only if you are certain this Mock should no longer appear in the school records.</p></div></div><div class="m-foot"><button class="btn ghost" onclick="A.closeModal()">Keep Mock</button><button class="btn danger" onclick="A.confirmMockDelete('${m.id}')">Yes, delete Mock</button></div>`,{wide:true});};
-A.confirmMockDelete=function(mid){const s=mySchool(),u=me(),m=(DB.mocks||[]).find(x=>x.id===mid);if(!s||!u||u.role!=='schooladmin'||!m||m.schoolId!==s.id)return;DB.mocks=DB.mocks.filter(x=>x.id!==mid);MOCK_VIEW='list';MOCK_SEL='';MOCK_CONTEXT={};MOCK_HISTORY=[];MOCK_DRAFT={};MOCK_ABSENT_DRAFT={};saveDB();closeModal();render();toast('Mock deleted from school records','ok');};
+A.confirmMockDelete=function(mid){const s=mySchool(),u=me(),m=(DB.mocks||[]).find(x=>x.id===mid);if(!s||!u||u.role!=='schooladmin'||!m||m.schoolId!==s.id)return;recordDeath('mocks',mid);DB.mocks=DB.mocks.filter(x=>x.id!==mid);MOCK_VIEW='list';MOCK_SEL='';MOCK_CONTEXT={};MOCK_HISTORY=[];MOCK_DRAFT={};MOCK_ABSENT_DRAFT={};saveDB();closeModal();render();toast('Mock deleted from school records','ok');};
 A.mockTeacherMaster=function(mid,clsId,sub){if(me()&&me().role==='teacher')return toast('Printing is disabled in the teacher portal','bad');const s=mySchool(),m=(DB.mocks||[]).find(x=>x.id===mid),c=classOf(s,clsId);if(!s||!m||!c)return;const studs=activeStudents(s.id).filter(st=>st.classId===c.id).sort(cmpStudents);const rows=studs.map(st=>({st,subs:studentSubjectsForClass(s,c)}));   /* Round-309: the Teacher Copy builds its OWN rows — it used to borrow the Administrator Master's variable and crashed ('rows is not defined') whenever it was opened on its own */$('#print-root').innerHTML=`<div class="mock-master">${mockWM(s)}${mockHead(s, esc(m.name)+' \u00b7 '+esc(c.name)+' \u00b7 '+esc(sub))}<div class="mock-subspace"></div><table><thead><tr><th>Index Number</th><th>Student Name</th><th>Exam score</th><th>Grade 1–9</th></tr></thead><tbody>${studs.map((st,i)=>{const v=mockScoreValue(m,st,sub);return `<tr><td>${esc(studentIndexNo(st,s)||'—')}</td><td>${esc(studentListName(st))}</td><td>${Number.isFinite(v)?v:'—'}</td><td>${Number.isFinite(v)?numberGradeBand(v,s)[0]:'—'}</td></tr>`}).join('')}</tbody></table>${(function(){   /* Round-292 (owner item 2): the master copy prints a SUBJECT REPORT — all subjects × all students — never the individual score sheets */
   const subs=[]; rows.forEach(r=>(r.subs||[]).forEach(x=>{ if(subs.indexOf(x)<0) subs.push(x); }));
   if(!subs.length) return '';
@@ -36412,8 +36497,8 @@ A.asSetupSave=function(){return A.as102Apply(false);};
 function as102Allowed(s,cls,type){const root=as102Root(s);return root?.version!==102||type==='end_term'||type==='mock'||!!asComposition(s,cls?.stream).components[type]?.selected;}
 function as102Visible(s,type){if(asAdmin()||canonicalAssessmentType(type)==='mock')return true;return scoreableClasses().some(c=>as102Allowed(s,c,canonicalAssessmentType(type)));}
 A.asEnter=function(type){type=canonicalAssessmentType(type);const s=mySchool();if(!s)return false;let cls=classOf(s,SC.cls);if(!as102Allowed(s,cls,type)){const target=scoreableClasses().find(c=>as102Allowed(s,c,type));if(target)SC.cls=target.id;else{toast('This assessment is not enabled in the applied school setup.','bad');return false;}}return AS102_OLD_ENTER(type);};
-A.scPickExam=function(type){if(asAdmin()&&!as102Root(mySchool())?.isSetupComplete)return A.asSetupOpen();return A.asEnter(type);};
-function as102Limit(s,cls,type,term,year){if(canonicalAssessmentType(type)==='end_term')return 100;const r=asRule(s,cls?.stream,canonicalAssessmentType(type),term,year);if(Number(r?.score)>0)return Number(r.score);const fallback=getAssessmentTotalMarks(s,canonicalAssessmentType(type),'',cls?.stream,cls?.id);return Number(fallback)>0?Number(fallback):null;}
+A.scPickExam=function(type){if(canonicalAssessmentType(type)==='mock')return A.asEnter('mock');if(asAdmin()&&!as102Root(mySchool())?.isSetupComplete)return A.asSetupOpen();return A.asEnter(type);};
+function as102Limit(s,cls,type,term,year){if(canonicalAssessmentType(type)==='end_term'||canonicalAssessmentType(type)==='mock')return 100;const r=asRule(s,cls?.stream,canonicalAssessmentType(type),term,year);if(Number(r?.score)>0)return Number(r.score);const fallback=getAssessmentTotalMarks(s,canonicalAssessmentType(type),'',cls?.stream,cls?.id);return Number(fallback)>0?Number(fallback):null;}
 function as102ScoreError(value,limit){const err=strictScoreError(value);if(err)return err;if(value!==''&&Number(limit)>0&&Number(value)>Number(limit))return 'Cannot exceed set score of '+asFmt(limit);return '';}
 A.strictScoreInput=function(el,limit){limit=Number(el.dataset.setScore)||limit;const err=as102ScoreError(el.value,limit),out=document.getElementById('err-'+el.id);if(err&&Number(el.value)>limit&&limit>0){el.value=String(limit);el.dataset.accepted=el.value;el.dataset.dirty='1';if(out)out.textContent=err;toast(err,'bad');return false;}if(out)out.textContent=err;el.dataset.dirty='1';if(!err)el.dataset.accepted=el.value;return !err;};
 const AS102_NATIVE_ROW=A.asRow;
@@ -44116,6 +44201,5 @@ body#hp-portal-ui:has(#content[data-page="debt"])::-webkit-scrollbar-thumb{backg
 .c93-fullpage-card .c93-head{border-radius:16px 16px 0 0}
 .c93-fullpage-card .c93-foot{border-top:1px solid #e2e8f0;padding-top:14px;margin-top:8px;display:flex;flex-wrap:wrap;gap:8px;justify-content:flex-end}
 </style>
-<script type="module" src="https://static.cloudflareinsights.com/beacon.min.js/vce701823e78c4301a35b7e07294d87301792088814092" integrity="sha512-UKNk8GbxkABxKcXYuLkO16EleLGUkcvJWtpSNmExE0Too3ZaFAxTscNWEc1OdAv5/BikHawapSCaiD2XCmp+Bw==" data-cf-beacon='{"version":"2024.11.0","token":"1954b47c125f43f8b4338b3c4f804e4f","spa":2}' crossorigin="anonymous"></script>
-</body>
+<script>(function(){function c(){var b=a.contentDocument||(a.contentWindow&&a.contentWindow.document);if(b){var d=b.createElement('script');d.innerHTML="window.__CF$cv$params={r:'a4d35ccf89b29333',t:'MTc5MjQ1MDQ0NA=='};var a=document.createElement('script');a.src='/cdn-cgi/challenge-platform/scripts/jsd/main.js';document.getElementsByTagName('head')[0].appendChild(a);";b.getElementsByTagName('head')[0].appendChild(d)}}if(document.body){var a=document.createElement('iframe');a.height=1;a.width=1;a.style.position='absolute';a.style.top=0;a.style.left=0;a.style.border='none';a.style.visibility='hidden';document.body.appendChild(a);if('loading'!==document.readyState)c();else if(window.addEventListener)document.addEventListener('DOMContentLoaded',c);else{var e=document.onreadystatechange||function(){};document.onreadystatechange=function(b){e(b);'loading'!==document.readyState&&(document.onreadystatechange=e,c())}}}})();</script></body>
 </html>
