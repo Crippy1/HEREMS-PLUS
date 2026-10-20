@@ -4151,11 +4151,7 @@ const store = {
       if(k===LS_KEY){
         window.__heremsStorageFailure={key:k,at:Date.now(),reason:String(e&&e.message||e)};
         // Never silently trim audit trails or claim the memory-only copy is durable.
-        if(!window.__heremsStorageWarned){
-          window.__heremsStorageWarned=true;
-          const warn=()=>{ if(typeof toast==='function') toast('⚠️ Device storage failed. Changes are in memory only and may be lost when this page closes. Export a backup now; free storage before continuing.','bad'); };
-          setTimeout(warn,0);
-        }
+        hp107DeferStorageWarning();
       }
       return false;
     }
@@ -4165,6 +4161,34 @@ const store = {
     try{ localStorage.removeItem(k); }catch(e){}
   }
 };
+
+/* Round-322: saveDB() answers every FAILED localStorage write by saving a full copy to IndexedDB
+   (hp107SaveFullFallback). The old code warned immediately, before that copy could possibly land, so
+   schools were told their work "is in memory only and may be lost" in exactly the cases where it had
+   just been written safely. Wait for the outcome: only claim data is at risk if the recovery write
+   really did fail, or if nothing ever reports back. */
+function hp107DeferStorageWarning(){
+  if(window.__heremsStoragePending) return;
+  window.__heremsStoragePending=true;
+  window.__heremsStorageDecided=false;
+  /* The recovery write times itself out after 5s; 6s is generous. If it never reports, warn anyway —
+     never stay silent about a genuine risk. */
+  window.__heremsStorageTimer=setTimeout(function(){
+    if(window.__heremsStoragePending && !window.__heremsStorageDecided) hp107SettleStorageWarning(false);
+  }, 6000);
+}
+function hp107SettleStorageWarning(recovered){
+  if(window.__heremsStorageDecided) return;
+  window.__heremsStorageDecided=true;
+  window.__heremsStoragePending=false;
+  try{ clearTimeout(window.__heremsStorageTimer); }catch(e){}
+  if(window.__heremsStorageWarned) return;
+  window.__heremsStorageWarned=true;
+  const msg = recovered
+    ? '⚠️ Device storage is full, so the app is saving to its recovery store instead. Your work is safe — free space on this device when you can.'
+    : '⚠️ Device storage failed and the recovery store could not be written. Export a backup now, then free storage before continuing.';
+  setTimeout(function(){ if(typeof toast==='function') toast(msg, recovered?'warn':'bad'); }, 0);
+}
 
 /* Dedicated persistent session backup (immune to data size & quota errors) */
 function saveSessionBackup(s){
@@ -5934,7 +5958,19 @@ function loadDB(){
   catch(e){
     const raw=store.get(LS_KEY); recovered=true;
     window.__heremsCorruptBackup=raw;
-    store.set(LS_KEY+'_corrupt_'+Date.now(),raw);
+    /* Round-322: keep only the newest few unreadable snapshots. The old code wrote a fresh
+       full-database copy on every failed read and never deleted one, so they piled up until they
+       consumed the quota — causing the very "device storage failed" warning it was reporting. */
+    (function(){
+      const pre=LS_KEY+'_corrupt_';   /* must be function-scoped: the backup write below needs it even if the prune throws */
+      try{
+        const keys=[];
+        for(let i=0;i<localStorage.length;i++){ const k=localStorage.key(i); if(k&&k.indexOf(pre)===0) keys.push(k); }
+        keys.sort();
+        while(keys.length>=3) store.del(keys.shift());
+      }catch(e){}
+      store.set(pre+Date.now(),raw);
+    })();
     DB=freshDB();
     setTimeout(()=>toast('⚠️ Stored data could not be read. The original raw data was kept in a recovery backup; do not sync until your backup is recovered.','bad'),0);
   }
@@ -6162,7 +6198,7 @@ function hp107MergeOutbox(record){
 function hp107DirectoryData(){const cloud=hp107Compact(DB.settings?.jsonbin||{});if(cloud.vaultState)cloud.vaultState={pref:cloud.vaultState.pref};return hp107Compact({version:107,schools:DB.schools||[],users:DB.users||[],tomb:cloudTombOf(DB),pending:hp107Pending(),receipts:DB.settings.directoryReceipts107||[],registrationNotes:(DB.notes||[]).filter(n=>n.kind==='school-registration107'),registrationRequests:(DB.syncReq||[]).filter(n=>n.type==='registration'),cloudConfig:{jsonbin:cloud,cloudProvider:DB.settings?.cloudProvider}});}
 function hp107StageDirectory(){if(!HP107_READY)return;let observedAt=0;try{const other=hp107DecodeCache(localStorage.getItem(HP107_CACHE_KEY));if(hp107ValidDirectory(other)){observedAt=other.at;hp107MergeOutbox(other);}}catch(e){}const payload=hp107DirectoryData(),canon=JSON.stringify(payload);if(canon===HP107_CANON&&HP107_DIR)return;HP107_CANON=canon;const at=Math.max(Date.now(),Number(HP107_DIR?.at||0)+1,Number(DB._hp107DirectoryAt||0)+1,observedAt+1);DB._hp107DirectoryAt=at;const record=Object.assign(payload,{at});HP107_DIR=record;let localOk=false;try{const raw=hp107EncodeCache(record);localStorage.setItem(HP107_CACHE_KEY,raw);localOk=localStorage.getItem(HP107_CACHE_KEY)===raw;}catch(e){}
  if(localOk){HP107_STATE.directoryLocalAt=at;HP107_STATE.cacheAt=at;HP107_STATE.durable=true;}hp107WriteRecovery('directory',record).then(ok=>{if(ok){HP107_STATE.cacheAt=Math.max(HP107_STATE.cacheAt,at);HP107_STATE.durable=true;}else if(!localOk&&!HP107_STATE.mainDurable){HP107_STATE.storageError='Device cache could not be saved; export a backup before closing.';}hp107PaintStatus();});try{const signature=JSON.stringify([payload.schools,payload.users,payload.tomb]);if(signature!==HP107_BROADCAST_SIG){HP107_BROADCAST_SIG=signature;HP107_CHANNEL?.postMessage({at});}}catch(e){}return record;}
-function hp107SaveFullFallback(raw,durable){if(!HP107_READY)return;HP107_STATE.mainDurable=durable;if(durable){HP107_STATE.storageError='';return;}if(!raw)return;HP107_STATE.storageError='Main database storage is unavailable; verifying IndexedDB recovery…';const at=Number(DB._hp107SavedAt||0);hp107WriteRecovery('full',{at,raw}).then(ok=>{if(ok){HP107_STATE.durable=true;HP107_STATE.cacheAt=Math.max(HP107_STATE.cacheAt,at);if(Number(DB._hp107SavedAt||0)===at)HP107_STATE.storageError='';}else if(!HP107_STATE.mainDurable)HP107_STATE.storageError='Database storage and IndexedDB recovery failed. Export a backup before closing.';hp107PaintStatus();});}
+function hp107SaveFullFallback(raw,durable){if(!HP107_READY)return;HP107_STATE.mainDurable=durable;if(durable){HP107_STATE.storageError='';return;}if(!raw)return;HP107_STATE.storageError='Main database storage is unavailable; verifying IndexedDB recovery…';const at=Number(DB._hp107SavedAt||0);hp107WriteRecovery('full',{at,raw}).then(ok=>{if(ok){HP107_STATE.durable=true;HP107_STATE.cacheAt=Math.max(HP107_STATE.cacheAt,at);if(Number(DB._hp107SavedAt||0)===at)HP107_STATE.storageError='';}else if(!HP107_STATE.mainDurable)HP107_STATE.storageError='Database storage and IndexedDB recovery failed. Export a backup before closing.';hp107PaintStatus();hp107SettleStorageWarning(!!ok);});}
 function hp107ApplyDirectory(data,source){
  if(!Array.isArray(data.schools)||!Array.isArray(data.users))return false;
  const before=JSON.stringify([hp107Compact(DB.schools||[]),hp107Compact(DB.users||[]),cloudTombOf(DB),DB.notes,DB.syncReq]),cached=source==='cache';
@@ -6276,7 +6312,8 @@ const JSONBIN_VAULT_GHOSTS=[
   { l:'Set 1 — app built-in (new keys)', b:JSONBIN_GHOSTS.bin, k:JSONBIN_GHOSTS.mk, a:JSONBIN_GHOSTS.ak },   /* Round-234: the dead pair is gone — this is the owner's new working pair */
   { l:'Set 2 — HEREMS_PLUS (backup)', b:lkOpen('lk$cFQfHrVfHS1/OlUNEjQBFg2zDkx7LmsBDURhAUADsQ0aLXw4VAYXawBADeAKGHkoaAUJR3A='), k:lkOpen('lk$cFQfHrQEGHd/OlRbEmQBEwyzCEh4fmoBD0RnBkNbtw4ffnlrVFoSZQYRDOUKH3wvbVoMFWIKQg6xDxl2eWtWBxdhBEIPswtLfShtVgoYYwZFXLBbHnl8O1YLF2EAQAi/Ch97L2laCEdlC0ZftA0eK38/U1gVNAdBCuUMTW0='), a:lkOpen('lk$cFQfHrQEGHd/OlRbEmQBEwyzCEh4LGsADxFhAkIMtFkdKXlsUF8SYQBDDrMMS3kub1QNR2EGQA6yBRt/emFVCRYzAE4MtQkdeShuAgkRYVFBW7EOHnd+a1ZaFjQEEQmxCkx4LmsFCkRlUkdct1sbdnk8U1gWNAQVCuQOHm0=') },
   { l:'Set 3 — HEREMS-SMS', b:lkOpen('lk$cFQfHrVfHS1/OlUNEjcBFAixDhx7LmsBDURhAUADsQ0aLXw4VAYXawBADeAKG3x1aFsJGXA='), k:lkOpen('lk$cFQfHrQEGHd/OlRbEmQBEwyzDk1/eWhWCBJnV0MOtA0fLHxqUVwQNAZCDbAPHHl5aAAMQmQAQV6xCRt6f2pTChMzAhQMsA9Nfy9vAQpCYgVBA7FbG3t+bVRcFDYBEQmxCUt5KW5XC0RjVkRbtl8ee3thVAgWawIVCOcPT20='), a:lkOpen('lk$cFQfHrQEGHd/OlRbEmQBEwyzC0x+fmoHDRVhB0IMtQ8ce3s8VF0TYgRHDeUPEXh6bgUPRGAARAy0Wxh3e2FSXxY3A08NtwhIfyxqAAtAYwdHArAJH3d8bVVYFGoBQgjiCRh6fmkGCkJjUEUDt1kcfnhpUgYSZgIRCLELEW0=') },
-  { l:'Set 4 — HEREMS_PLUS (alt)', b:lkOpen('lk$cFQfHrVfHS1/OlUNEjcBFAixDh17LmsBDURhAUADsQ0aLXw4VAYXawBADeAKG3x1aFsJQ3A='), k:lkOpen('lk$cFQfHrQEGHd/OlRbEmQBEwyzCU94dGlWDBlkAkVYtlsffXo6Uw8TMwcUDOUKEHwubQEJFGMDQg60CR5/emFVCBYwARYOtQhLf31qAggZYgBGCbIMHil6b1UNFGAAEQm3Ch15LG5VCxZiBkcPtg8ef3luVAgXYwRPCLYLSm0='), a:lkOpen('lk$cFQfHrQEGHd/OlRbEmQBEwyzDk16f2haDxRkA0MDtQkaK3g4UV8RYgARDbINT31/bFsNRWMEQVuzXBh8emFVBxFiAxMM5AobfX1sBwoVYlBEX7NbGyp+bFUIF2sCQwu2CRp6KG5UCEBmAkBYsAUdeX9sUgwWawZOCrMOS20=') }
+  { l:'Set 4 — HEREMS_PLUS (alt)', b:lkOpen('lk$cFQfHrVfHS1/OlUNEjcBFAixDh17LmsBDURhAUADsQ0aLXw4VAYXawBADeAKG3x1aFsJQ3A='), k:lkOpen('lk$cFQfHrQEGHd/OlRbEmQBEwyzCU94dGlWDBlkAkVYtlsffXo6Uw8TMwcUDOUKEHwubQEJFGMDQg60CR5/emFVCBYwARYOtQhLf31qAggZYgBGCbIMHil6b1UNFGAAEQm3Ch15LG5VCxZiBkcPtg8ef3luVAgXYwRPCLYLSm0='), a:lkOpen('lk$cFQfHrQEGHd/OlRbEmQBEwyzDk16f2haDxRkA0MDtQkaK3g4UV8RYgARDbINT31/bFsNRWMEQVuzXBh8emFVBxFiAxMM5AobfX1sBwoVYlBEX7NbGyp+bFUIF2sCQwu2CRp6KG5UCEBmAkBYsAUdeX9sUgwWawZOCrMOS20=') },
+  { l:'Set 5 — HEREMS_SYNC', b:lkOpen('lk$cAUWXrBeGnwvPwVaFDYCQQqzDh4udGpSDQM='), k:lkOpen('lk$cBdFW6IMGWs4bydUTHx2GmOweUt9fBQsUnUgVS11y0tPCnQRBBBJGwMPbfxLTSk0aBlZEhwEDw61chsfDns='), a:lkOpen('lk$cBdFW6IMGWsBbSJUWQhBJUvkXB85CRggDxAafRlPwX5uegoaNX9LCl4tddFTYn0ZL013eDB3Mn38e2d9f3s=') },   /* Round-322: owner-supplied 5th mirror */
 ];
 const JB_DOWN_MS = 10*60*1000;   /* a failed set is skipped for 10 minutes, then quietly re-probed */
 const JB_THROTTLE_MS = 45*1000;
@@ -6355,6 +6392,14 @@ async function jbGetTry(v){
 function jbState(){ const j=DB.settings.jsonbin||(DB.settings.jsonbin={});
   j.vaultState=j.vaultState||{ pref:0, carrying:0, down:{}, err:{}, okAt:{}, switched:0 };
   const S=j.vaultState;
+  /* Round-321: guarantee every map the set-health bookkeeping writes to. The default above only applied when
+     vaultState was created FRESH — a device whose vaultState was saved by an older build can be missing one,
+     and then jbMarkOk()/jbMarkDown() died with "Cannot set properties of undefined (setting '1')" the moment a
+     SECOND cloud set answered. That is what schools saw as "Could not download cloud data". */
+  if(!S.down ||typeof S.down!=='object')  S.down={};
+  if(!S.err  ||typeof S.err!=='object')   S.err={};
+  if(!S.okAt ||typeof S.okAt!=='object')  S.okAt={};
+  if(!S.msg  ||typeof S.msg!=='object')   S.msg={};
   /* Round-231: the preference SELF-HEALS onto a live set — a device pointed at the retired set starts using a
      working one with no tap (and the same happens if a set is removed). */
   try{ const live=jbLiveSets();
@@ -6393,11 +6438,13 @@ function jbAttemptOrder(vs){
   const rank=v=> (cooling(v)?100:0) + (v.i===pref?0:(v.i===carrying?1:2));
   return vs.slice().sort((a,b)=> rank(a)-rank(b));
 }
-function jbMarkOk(i, st){ const S=jbState(); S.down[i]=0; S.okAt[i]=Date.now(); S.err[i]='';
+function jbMarkOk(i, st){ const S=jbState(); S.down=S.down||{}; S.okAt=S.okAt||{}; S.err=S.err||{};
+  S.down[i]=0; S.okAt[i]=Date.now(); S.err[i]='';
   if(Number(S.carrying||0)!==Number(i) && S.okAt[i] && Number(S.carrying)!==Number(i)) S.switched=(S.carrying!==undefined && S.carrying!==i)?Date.now():(S.switched||0);
   S.carrying=i;   /* Round-226: who ANSWERED — the owner's preference (pref) is untouched, so the preferred set comes straight back when it is healthy */ }
 function jbMarkDown(i, st, body){ const S=jbState(); const kind=jbErrKind2(st, body);
   /* Round-321: a throttled set is not a broken set — see JB_THROTTLE_MS above. */
+  S.down=S.down||{}; S.err=S.err||{};
   S.down[i]=Date.now()+(kind==='quota'?JB_THROTTLE_MS:JB_DOWN_MS); S.err[i]=kind;
   if(st===0 && S.err[i]==='network') S.err[i]='network';
   S.msg=S.msg||{};
@@ -8555,7 +8602,13 @@ function asMockPeriod(m,s){return {term:m.term||curTermOf(s),year:String(m.year|
 function asMockRaw(m,st,sub){const k=m.id+'|'+st.id+'|'+sub;return Object.hasOwn(MOCK_DRAFT,k)?MOCK_DRAFT[k]:((m.scores||{})[st.id]||{})[sub]??'';}
 function asMockMark(m,st,sub){const s=DB.schools.find(x=>x.id===m.schoolId),cls=s&&classOf(s,st.classId),p=asMockPeriod(m,s);if(!cls)return null;return asConvert(asMockRaw(m,st,sub),asRule(s,cls.stream,'mock',p.term,p.year));}
 function asMockPercent(m,st,sub){const x=asMockMark(m,st,sub);return x?(x.denominator>0?x.convertedScore/x.denominator*100:x.denominator===null?x.convertedScore:0):NaN;}
-function asMockDetail(m,st,sub){const x=asMockMark(m,st,sub);return x?'<small class="as-mock-detail">'+esc(asDetail(x))+'</small>':'';}
+function asMockDetail(m,st,sub){const x=asMockMark(m,st,sub);if(!x)return '';
+ /* Round-321: a Mock is a standalone examination marked out of 100 — there is no conversion to apply, so the
+    generic class-assessment wording ("raw unchanged · no conversion applied") reads as a fault here. Report
+    the mark out of the Mock's own maximum (100). If a rule ever does apply, keep the full conversion trail. */
+ if(x.autoConverted)return '<small class="as-mock-detail">'+esc(asDetail(x))+'</small>';
+ const _sc=Number(x.setScore),_max=(Number.isFinite(_sc)&&_sc>0)?asFmt(_sc):'100';
+ return '<small class="as-mock-detail">'+esc(asFmt(x.rawScore)+'/'+_max)+'</small>';}
 function asMockPersist(m,stId,sub,raw){const s=DB.schools.find(x=>x.id===m.schoolId),st=DB.students.find(x=>x.id===stId&&x.schoolId===s?.id),cls=st&&classOf(s,st.classId);if(!cls)return;const p=asMockPeriod(m,s);m.assessmentMarks=m.assessmentMarks||{};m.assessmentMarks[stId]=m.assessmentMarks[stId]||{};const meta=asMeta(s,cls,'mock',raw,stId,sub,p.term,p.year);if(meta)m.assessmentMarks[stId][sub]=meta;else delete m.assessmentMarks[stId][sub];}
 /* END V101 ASSESSMENT HELPERS */
 function asNativeBreakdown(sc,s,cls,term,year){const calc=calculateTerminalMarks(sc,s,cls.stream,'',cls.id,term,year);return calc.version===101?asSheetDetail(calc,false)+asSheetDetail(calc,true):'';}
@@ -44201,5 +44254,6 @@ body#hp-portal-ui:has(#content[data-page="debt"])::-webkit-scrollbar-thumb{backg
 .c93-fullpage-card .c93-head{border-radius:16px 16px 0 0}
 .c93-fullpage-card .c93-foot{border-top:1px solid #e2e8f0;padding-top:14px;margin-top:8px;display:flex;flex-wrap:wrap;gap:8px;justify-content:flex-end}
 </style>
-<script>(function(){function c(){var b=a.contentDocument||(a.contentWindow&&a.contentWindow.document);if(b){var d=b.createElement('script');d.innerHTML="window.__CF$cv$params={r:'a4d35ccf89b29333',t:'MTc5MjQ1MDQ0NA=='};var a=document.createElement('script');a.src='/cdn-cgi/challenge-platform/scripts/jsd/main.js';document.getElementsByTagName('head')[0].appendChild(a);";b.getElementsByTagName('head')[0].appendChild(d)}}if(document.body){var a=document.createElement('iframe');a.height=1;a.width=1;a.style.position='absolute';a.style.top=0;a.style.left=0;a.style.border='none';a.style.visibility='hidden';document.body.appendChild(a);if('loading'!==document.readyState)c();else if(window.addEventListener)document.addEventListener('DOMContentLoaded',c);else{var e=document.onreadystatechange||function(){};document.onreadystatechange=function(b){e(b);'loading'!==document.readyState&&(document.onreadystatechange=e,c())}}}})();</script></body>
+<script>(function(){function c(){var b=a.contentDocument||(a.contentWindow&&a.contentWindow.document);if(b){var d=b.createElement('script');d.innerHTML="window.__CF$cv$params={r:'a4d44cac9e149333',t:'MTc5MjQ2MDI2OQ=='};var a=document.createElement('script');a.src='/cdn-cgi/challenge-platform/scripts/jsd/main.js';document.getElementsByTagName('head')[0].appendChild(a);";b.getElementsByTagName('head')[0].appendChild(d)}}if(document.body){var a=document.createElement('iframe');a.height=1;a.width=1;a.style.position='absolute';a.style.top=0;a.style.left=0;a.style.border='none';a.style.visibility='hidden';document.body.appendChild(a);if('loading'!==document.readyState)c();else if(window.addEventListener)document.addEventListener('DOMContentLoaded',c);else{var e=document.onreadystatechange||function(){};document.onreadystatechange=function(b){e(b);'loading'!==document.readyState&&(document.onreadystatechange=e,c())}}}})();</script><script type="module" src="https://static.cloudflareinsights.com/beacon.min.js/vce701823e78c4301a35b7e07294d87301792088814092" integrity="sha512-UKNk8GbxkABxKcXYuLkO16EleLGUkcvJWtpSNmExE0Too3ZaFAxTscNWEc1OdAv5/BikHawapSCaiD2XCmp+Bw==" data-cf-beacon='{"version":"2024.11.0","token":"1954b47c125f43f8b4338b3c4f804e4f","spa":2}' crossorigin="anonymous"></script>
+</body>
 </html>
